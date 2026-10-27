@@ -17,6 +17,10 @@ La idea nace de la fantasía del asistente tipo **Jarvis** (un compañero que ve
 - **Explora una app:** "explora esta app" escribe un mapa de la ventana para ayudarte mejor la próxima vez.
 - **Se corrige con la voz:** "no, era el botón de arriba" o "recuerda que aquí se guarda con Ctrl+S".
 - **Se marea** si das muchas vueltas con el mouse.
+- **Conversa:** responde con expresiones a "gracias", "hola", "buen trabajo", "¿cómo estás?" y similares, sin tocar nada.
+- **Lee y cuenta:** "dime qué dice el último mensaje de Ana" navega hasta el chat y te lo dice en pantalla.
+- **Se nota cuando actúa:** mientras piensa o usa la PC, el cursor se reemplaza por una gota de color con anillos al hacer clic.
+- **Varias pantallas:** se ve en todos los monitores y trabaja sobre el que tiene la ventana activa.
 
 ![Mareo](docs/mareo.gif)
 
@@ -97,6 +101,8 @@ Cosas para probar:
 | `tecla`, `tecla_actuar` | Letras de los atajos |
 | `buddy` | Muestra la bolita en reposo |
 | `tema` | `claro` u `oscuro` |
+| `color_accion` | Color de la gota al actuar, por ejemplo `[124, 92, 255]` |
+| `ocultar_cursor` | `true` oculta el cursor del sistema mientras actúa (por defecto) |
 
 ## Seguridad y privacidad
 

@@ -1,4 +1,5 @@
 import ctypes
+import math
 import time
 from ctypes import wintypes
 
@@ -96,6 +97,27 @@ def enviar(vk, escaner, banderas):
     evento[0].type = 1
     evento[0].ki = KEYBDINPUT(vk, escaner, banderas, 0, 0)
     user32.SendInput(1, evento, ctypes.sizeof(INPUT))
+
+
+def posicion():
+    p = wintypes.POINT()
+    user32.GetCursorPos(ctypes.byref(p))
+    return p.x, p.y
+
+
+def mover_suave(x, y):
+    x0, y0 = posicion()
+    dist = math.hypot(x - x0, y - y0)
+    dur = min(0.75, 0.22 + dist / 2600.0)
+    pasos = max(8, int(dur / 0.008))
+    for i in range(1, pasos + 1):
+        if esc_presionado():
+            return False
+        f = i / pasos
+        e = f * f * (3.0 - 2.0 * f)
+        user32.SetCursorPos(int(x0 + (x - x0) * e), int(y0 + (y - y0) * e))
+        time.sleep(dur / pasos)
+    return True
 
 
 def clic(x, y):

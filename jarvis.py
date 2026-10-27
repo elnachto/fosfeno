@@ -2,6 +2,7 @@ import ctypes
 import importlib.util
 import json
 import os
+import random
 import subprocess
 import sys
 import threading
@@ -36,6 +37,21 @@ CONFIRMAR_SEGUNDOS = 20
 MIN_CARACTERES = 3
 OFERTA_SEGUNDOS = 10
 ESTADO = {"ultimo": None, "pendiente": None}
+CONFIG = {}
+SOCIAL = {
+    "GRACIAS": ("enamorado", ["¡De nada!", "¡Para eso estoy!", "¡Un placer ayudarte!"], 2.6),
+    "CARINO": ("enamorado", ["Aww, qué lindo. ¡Seguimos!", "¡Gracias! Me alegra ayudarte"], 3.0),
+    "SALUDO": ("guiño", ["¡Hola! ¿Qué hacemos?", "¡Hey! Aquí estoy", "¡Hola! Dime qué necesitas"], 2.6),
+    "ELOGIO": ("feliz", ["¡Gracias! Me esfuerzo", "¡Seguimos así!", "Jeje, gracias"], 2.6),
+    "DESPEDIDA": ("feliz", ["¡Hasta luego!", "¡Nos vemos!"], 2.6),
+    "NOCHES": ("dormido", ["Buenas noches, que descanses"], 4.0),
+    "DISCULPA": ("feliz", ["Tranquilo, no pasa nada", "Sin problema"], 2.6),
+    "QUEJA": ("triste", ["Ups, perdón. Dime «no, era…» y lo corrijo", "Lo siento. Dime qué hice mal y lo anoto"], 4.0),
+    "ASOMBRO": ("sorprendido", ["¡Sí! ¿Verdad?", "¡Wow!"], 2.6),
+    "ESTADO": ("feliz", ["¡Muy bien! Listo para ayudar", "Todo en orden. ¿Qué hacemos?"], 2.8),
+    "IDENTIDAD": ("feliz", ["Soy Fosfeno, tu asistente local. Veo tu pantalla y te ayudo a usarla"], 4.5),
+    "ENTENDIDO": ("guiño", ["¡Dale!", "¡Listo!"], 2.0),
+}
 LETRAS = {"senalar": "J", "actuar": "K"}
 COLOR = "#22d3ee"
 FONDO = "#0f172a"
@@ -248,9 +264,10 @@ def mostrar_senal(rect, punto, segundos, texto):
 
 def frase(elemento):
     tipo, nombre, x0, y0, x1, y1 = elemento
-    ancho = user32.GetSystemMetrics(0)
-    alto = user32.GetSystemMetrics(1)
-    z = marcas.zona((x0 + x1) // 2, (y0 + y1) // 2, ancho, alto).replace("-", ", ")
+    ancho = marcas.MONITOR["width"] or user32.GetSystemMetrics(0)
+    alto = marcas.MONITOR["height"] or user32.GetSystemMetrics(1)
+    cx, cy = marcas.a_local((x0 + x1) // 2, (y0 + y1) // 2)
+    z = marcas.zona(cx, cy, ancho, alto).replace("-", ", ")
     if tipo.startswith("BarraDeTareas:"):
         return "En la barra de tareas, pulsa «" + etiqueta(elemento) + "» (" + z + ")."
     return "Pulsa «" + etiqueta(elemento) + "» (" + z + ")."
@@ -264,6 +281,10 @@ def es_mi_consola(titulo):
     except Exception:
         pass
     return "jarvis.py" in (titulo or "").lower()
+
+
+def control(modo):
+    capa.enviar(cmd="control", activo=True, modo=modo, ocultar=bool(CONFIG.get("ocultar_cursor", True)))
 
 
 def avisar(texto, duracion=3.5, expresion=None):
@@ -316,15 +337,22 @@ def ejecutar(objetivo, escaneo, sello):
     anterior = None
     ruta_log = os.path.join(marcas.OUT, "log_actuar_" + sello + ".txt")
     app_inicial = memoria.app_de(titulo)
-    ejemplos = memoria.texto_recetas(memoria.buscar_recetas(objetivo, app_inicial))
+    control("pensar")
+    partes = marcas.partir_objetivo(objetivo)
+    compuesto = len(partes) > 1
+    ejemplos = "" if compuesto else memoria.texto_recetas(memoria.buscar_recetas(objetivo, app_inicial))
     with open(ruta_log, "w", encoding="utf-8") as log:
         log.write("OBJETIVO: " + objetivo + "\n")
+        if compuesto:
+            print("Partes:", " | ".join(partes))
+            log.write("PARTES:\n" + "\n".join(str(i) + ") " + p for i, p in enumerate(partes, start=1)) + "\n")
         if ejemplos:
             print("Uso recetas aprendidas:\n" + ejemplos)
             log.write("RECETAS:\n" + ejemplos + "\n")
         for paso in range(1, MAX_PASOS + 1):
             capa.enviar(cmd="estado", valor="pensando")
             capa.enviar(cmd="plan", hechos=len(historial), activo=True)
+            control("pensar")
             if paso > 1:
                 time.sleep(0.9)
                 img, titulo, elementos = escanear()
@@ -335,7 +363,7 @@ def ejecutar(objetivo, escaneo, sello):
             if not elementos:
                 avisar("No puedo ver los botones de esta ventana", expresion="triste")
                 return
-            accion, respuesta, lista, marcada, seg = marcas.decidir_accion(objetivo, img, titulo, elementos, historial, ejemplos)
+            accion, respuesta, lista, marcada, seg = marcas.decidir_accion(objetivo, img, titulo, elementos, historial, ejemplos, partes)
             try:
                 marcada.save(os.path.join(marcas.OUT, "actuar_" + sello + "_p" + str(paso) + ".jpg"), quality=85)
             except Exception:
@@ -348,8 +376,8 @@ def ejecutar(objetivo, escaneo, sello):
             tipo = accion["tipo"]
             print("Paso", paso, "->", tipo, "(modelo:", round(seg, 1), "s)")
             if tipo == "listo":
-                if historial:
-                    guardar_exito(app_inicial, objetivo, list(historial))
+                if historial and not compuesto:
+                    guardar_exito(app_inicial, objetivo, [("dije lo que se veía en pantalla" if h.startswith("dije «") else h) for h in historial])
                 capa.enviar(cmd="plan", hechos=len(historial), activo=False)
                 capa.enviar(cmd="estado", valor="idle")
                 avisar("Listo.", 2.5, expresion="feliz")
@@ -381,6 +409,12 @@ def ejecutar(objetivo, escaneo, sello):
                     capa.enviar(cmd="limpiar")
                     avisar("Cancelado.")
                     return
+                control("mover")
+                if not acciones.mover_suave(punto[0], punto[1]):
+                    capa.enviar(cmd="limpiar")
+                    avisar("Cancelado.")
+                    return
+                capa.enviar(cmd="toque")
                 acciones.clic(punto[0], punto[1])
                 capa.enviar(cmd="limpiar")
                 historial.append("clic en «" + etiqueta(elemento) + "»")
@@ -391,11 +425,24 @@ def ejecutar(objetivo, escaneo, sello):
                 if esperar_cancelacion(0.6):
                     avisar("Cancelado.")
                     return
+                control("escribir")
                 acciones.escribir(accion["texto"])
                 historial.append("escribí «" + accion["texto"] + "»")
                 log.write("EJECUTADO: " + historial[-1] + "\n")
+            elif tipo == "decir":
+                texto_d = accion["texto"][:300]
+                print("Digo:", texto_d)
+                capa.enviar(cmd="estado", valor="idle")
+                capa.enviar(cmd="expresion", valor="feliz", duracion=2.0)
+                capa.enviar(cmd="mensaje", texto=texto_d, duracion=min(14.0, 3.0 + len(texto_d) / 14.0))
+                historial.append("dije «" + texto_d + "»")
+                log.write("EJECUTADO: " + historial[-1] + "\n")
+                if esperar_cancelacion(min(7.0, 1.5 + len(texto_d) / 30.0)):
+                    avisar("Cancelado.")
+                    return
             elif tipo == "tecla":
                 print("Tecla:", accion["tecla"])
+                control("escribir")
                 acciones.tecla(accion["tecla"])
                 historial.append("pulsé la tecla " + accion["tecla"])
                 log.write("EJECUTADO: " + historial[-1] + "\n")
@@ -455,6 +502,8 @@ def continuar(texto, escaneo, sello, inicio, forzar_hacer):
             olvidar()
         elif tipo == "REPASAR":
             repasar(app)
+        elif tipo == "SOCIAL":
+            socializar(texto)
         elif tipo == "PREGUNTA":
             ESTADO["ultimo"] = {"app": app, "objetivo": texto}
             responder(texto, escaneo)
@@ -463,12 +512,20 @@ def continuar(texto, escaneo, sello, inicio, forzar_hacer):
             try:
                 ejecutar(texto, escaneo, sello)
             finally:
+                capa.enviar(cmd="control", activo=False)
                 capa.enviar(cmd="plan_fin")
         else:
             ESTADO["ultimo"] = {"app": app, "objetivo": texto}
             guiar(texto, escaneo, sello, inicio)
     finally:
         capa.enviar(cmd="estado", valor="idle")
+
+
+def socializar(texto):
+    tipo = marcas.tipo_social(texto)
+    expr, frases, dur = SOCIAL.get(tipo, ("feliz", ["¡Aquí estoy!"], 2.5))
+    capa.enviar(cmd="estado", valor="idle")
+    avisar(random.choice(frases), dur, expresion=expr)
 
 
 def responder(texto, escaneo):
@@ -691,6 +748,7 @@ def modo_texto(letra, letra_actuar, actuar_ok):
 def main():
     marcas.preparar_dpi()
     cfg = voz.leer_config()
+    CONFIG.update(cfg)
     letra = str(cfg.get("tecla", "J"))[:1].upper()
     letra_actuar = str(cfg.get("tecla_actuar", "K"))[:1].upper()
     LETRAS["senalar"] = letra

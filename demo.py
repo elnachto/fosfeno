@@ -5,6 +5,8 @@ import subprocess
 import sys
 import time
 
+import acciones
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -71,6 +73,24 @@ def main():
                 print("Expresión:", ex)
                 enviar(cmd="expresion", valor=ex, duracion=2.5)
                 esperar(3.2)
+            print("Control: el mouse se pinta mientras actúa")
+            x, y = cursor()
+            enviar(cmd="control", activo=True, modo="pensar")
+            esperar(2.0)
+            enviar(cmd="control", activo=True, modo="mover")
+            for ox, oy in ((x + 260, y - 120), (x + 120, y + 150), (x - 40, y - 40)):
+                acciones.mover_suave(ox, oy)
+                enviar(cmd="toque")
+                esperar(0.4)
+            enviar(cmd="control", activo=True, modo="escribir")
+            esperar(1.6)
+            enviar(cmd="control", activo=False)
+            esperar(1.5)
+            print("Interacción social")
+            for frase in ("GRACIAS", "SALUDO", "ASOMBRO"):
+                enviar(cmd="expresion", valor={"GRACIAS": "enamorado", "SALUDO": "guiño", "ASOMBRO": "sorprendido"}[frase], duracion=2.4)
+                enviar(cmd="mensaje", texto={"GRACIAS": "¡De nada!", "SALUDO": "¡Hola! ¿Qué hacemos?", "ASOMBRO": "¡Wow!"}[frase], duracion=2.4)
+                esperar(3.0)
             print("Respuesta corta")
             enviar(cmd="mensaje", texto="Hola Nachus, aquí estoy", duracion=2.5)
             esperar(4.0)

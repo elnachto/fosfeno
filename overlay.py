@@ -1,3 +1,4 @@
+import atexit
 import json
 import math
 import os
@@ -40,12 +41,20 @@ try:
     user32.GetWindowLongW.restype = ctypes.c_long
     user32.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_long]
     user32.SetWindowLongW.restype = ctypes.c_long
+    user32.CreateCursor.argtypes = [wintypes.HINSTANCE, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p]
+    user32.CreateCursor.restype = ctypes.c_void_p
+    user32.SetSystemCursor.argtypes = [ctypes.c_void_p, wintypes.DWORD]
+    user32.SetSystemCursor.restype = wintypes.BOOL
+    user32.SystemParametersInfoW.argtypes = [wintypes.UINT, wintypes.UINT, ctypes.c_void_p, wintypes.UINT]
+    user32.SystemParametersInfoW.restype = wintypes.BOOL
 except Exception:
     user32 = None
 
+IDS_CURSOR = (32512, 32513, 32514, 32515, 32516, 32642, 32643, 32644, 32645, 32646, 32648, 32649, 32650, 32651)
+
 TEMAS = {
-    "claro": {"relleno": (255, 255, 255), "tinta": (22, 24, 29), "sombra": 0.22},
-    "oscuro": {"relleno": (22, 24, 29), "tinta": (240, 242, 246), "sombra": 0.35},
+    "claro": {"relleno": (255, 255, 255), "tinta": (22, 24, 29), "sombra": 0.22, "accion": (124, 92, 255)},
+    "oscuro": {"relleno": (22, 24, 29), "tinta": (240, 242, 246), "sombra": 0.35, "accion": (150, 124, 255)},
 }
 DESENFOQUE = 6.0
 CONTRASTE = 18.0
@@ -55,8 +64,44 @@ HUECO = 8.0
 SUENO = 60.0
 RADIO_REPOSO = 15.0
 MAX_GOTAS = 6
-MAREO_UMBRAL = 8.0
+MAREO_UMBRAL = 9.0
+MAREO_TAU = 1.2
+MAREO_MUESTRA = 12.0
+MAREO_PAUSA = 0.3
+ZONA_MUERTA = 6.0
+RADIO_CONTROL = 12.0
 ANCHO_TARJETA = 340.0
+
+
+def ocultar_cursor_sistema():
+    if user32 is None:
+        return False
+    try:
+        plano_and = (ctypes.c_ubyte * 128)(*([0xFF] * 128))
+        plano_xor = (ctypes.c_ubyte * 128)()
+        for ident in IDS_CURSOR:
+            h = user32.CreateCursor(None, 0, 0, 32, 32, plano_and, plano_xor)
+            if h:
+                user32.SetSystemCursor(h, ident)
+        return True
+    except Exception:
+        return False
+
+
+def restaurar_cursor_sistema():
+    if user32 is None:
+        return
+    try:
+        user32.SystemParametersInfoW(0x0057, 0, None, 0)
+    except Exception:
+        pass
+
+
+def geometria_total():
+    total = QRect()
+    for pantalla in QGuiApplication.screens():
+        total = total.united(pantalla.geometry())
+    return total
 
 
 def lim(v, a=0.0, b=1.0):
@@ -146,7 +191,7 @@ def gauss(a, sigma):
     return a
 
 
-def pintar_goo(p, zona, formas, relleno, sombra_alfa):
+def pintar_goo(p, zona, formas, relleno, sombra_alfa, opac=1.0):
     w, h = zona.width(), zona.height()
     if w < 2 or h < 2:
         return
@@ -169,7 +214,7 @@ def pintar_goo(p, zona, formas, relleno, sombra_alfa):
     bpl = m.bytesPerLine()
     crudo = np.frombuffer(m.constBits(), np.uint8, count=bpl * h).reshape(h, bpl // 4, 4)
     a = crudo[:, :w, 3].astype(np.float32) * (1.0 / 255.0)
-    al = np.clip(CONTRASTE * gauss(a, DESENFOQUE) + INTERCEPTO, 0.0, 1.0)
+    al = np.clip(CONTRASTE * gauss(a, DESENFOQUE) + INTERCEPTO, 0.0, 1.0) * opac
     s = np.zeros_like(al)
     s[3:, :] = al[:-3, :]
     s = gauss(s, 4.0) * sombra_alfa
@@ -460,15 +505,18 @@ class Capa(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        geo = QGuiApplication.primaryScreen().geometry()
+        geo = geometria_total()
+        self.origen = QPointF(geo.x(), geo.y())
         self.ancho = geo.width()
         self.alto = geo.height()
+        self.cursor_oculto = False
         self.setGeometry(geo.x(), geo.y(), self.ancho, self.alto - 1)
         self.fm = QFontMetricsF(fuente())
         self.t = 0.0
         self.ultimo = time.perf_counter()
+        self.cur_ancla = self.cursor()
         inicio = self.destino_cursor()
-        self.cuerpo = Muelle2(inicio, 380.0, 18.0)
+        self.cuerpo = Muelle2(inicio, 330.0, 27.0)
         self.cola = Muelle2(inicio, 150.0, 15.0)
         self.radio = Muelle(RADIO_REPOSO if mostrar_buddy else 0.0, 320.0, 17.0)
         self.cara = Muelle(1.0, 200.0, 22.0)
@@ -489,7 +537,18 @@ class Capa(QWidget):
         self.ultimo_mov = 0.0
         self.cur_prev = self.cursor()
         self.rumbo_prev = None
+        self.t_muestra = 0.0
         self.giro_acum = 0.0
+        acc = cfg.get("color_accion")
+        if isinstance(acc, list) and len(acc) == 3:
+            self.accion = tuple(int(v) for v in acc)
+        else:
+            self.accion = self.tema["accion"]
+        self.ctl = Muelle(0.0, 240.0, 20.0)
+        self.ctl_modo = "mover"
+        self.huella = Muelle2(self.cursor(), 1400.0, 56.0)
+        self.huella_cola = Muelle2(self.cursor(), 170.0, 22.0)
+        self.toques = []
         self.zona_previa = QRegion()
         self.reloj = QTimer(self)
         self.reloj.setTimerType(Qt.TimerType.PreciseTimer)
@@ -499,10 +558,15 @@ class Capa(QWidget):
 
     def cursor(self):
         c = QCursor.pos()
-        return QPointF(c.x(), c.y())
+        return QPointF(c.x() - self.origen.x(), c.y() - self.origen.y())
+
+    def restaurar(self):
+        if self.cursor_oculto:
+            restaurar_cursor_sistema()
+            self.cursor_oculto = False
 
     def destino_cursor(self):
-        c = self.cursor()
+        c = self.cur_ancla
         return QPointF(c.x() + 24.0, c.y() + 26.0)
 
     def clic_a_traves(self):
@@ -540,6 +604,17 @@ class Capa(QWidget):
                 self.plan["activo"] = False
         elif cmd == "tema":
             self.tema = TEMAS.get(str(c.get("valor", "claro")).lower(), self.tema)
+        elif cmd == "control":
+            activo = bool(c.get("activo", True))
+            self.ctl.meta = 1.0 if activo else 0.0
+            self.ctl_modo = str(c.get("modo", "mover"))
+            quiere = activo and bool(c.get("ocultar", False))
+            if quiere and not self.cursor_oculto:
+                self.cursor_oculto = ocultar_cursor_sistema()
+            elif not quiere and self.cursor_oculto:
+                self.restaurar()
+        elif cmd == "toque":
+            self.toques.append({"p": self.cursor(), "t0": self.t})
         elif cmd == "senalar":
             self.senalar(c.get("rect", [0, 0, 10, 10]), str(c.get("texto", "")), float(c.get("duracion", 5)))
         elif cmd == "mensaje":
@@ -557,10 +632,13 @@ class Capa(QWidget):
             self.oculto = False
             self.update()
         elif cmd == "salir":
+            self.restaurar()
             QApplication.quit()
 
     def senalar(self, rect, texto, duracion):
         x0, y0, x1, y1 = rect
+        x0, x1 = x0 - self.origen.x(), x1 - self.origen.x()
+        y0, y1 = y0 - self.origen.y(), y1 - self.origen.y()
         r = QRectF(x0, y0, max(1, x1 - x0), max(1, y1 - y0))
         destino = QPointF(lim(x1 + 12.0, 24.0, self.ancho - 24.0), lim(y1 + 12.0, 24.0, self.alto - 24.0))
         self.senal = {"rect": r, "texto": texto, "t0": self.t, "dur": duracion, "destino": destino}
@@ -604,13 +682,16 @@ class Capa(QWidget):
         if self.plan is not None and self.plan.get("fin") is not None and self.t > self.plan["fin"] + 0.6:
             self.plan = None
         cur = self.cursor()
+        if math.hypot(cur.x() - self.cur_ancla.x(), cur.y() - self.cur_ancla.y()) > ZONA_MUERTA:
+            self.cur_ancla = cur
+            self.ultimo_mov = self.t
         ddx = cur.x() - self.cur_prev.x()
         ddy = cur.y() - self.cur_prev.y()
-        self.giro_acum *= math.exp(-dt / 1.8)
-        if abs(ddx) + abs(ddy) > 3.0:
+        self.giro_acum *= math.exp(-dt / MAREO_TAU)
+        if math.hypot(ddx, ddy) >= MAREO_MUESTRA:
             self.ultimo_mov = self.t
             rumbo = math.atan2(ddy, ddx)
-            if self.rumbo_prev is not None:
+            if self.rumbo_prev is not None and self.t - self.t_muestra < MAREO_PAUSA:
                 d = rumbo - self.rumbo_prev
                 while d > math.pi:
                     d -= 2.0 * math.pi
@@ -618,13 +699,25 @@ class Capa(QWidget):
                     d += 2.0 * math.pi
                 self.giro_acum += abs(d)
             self.rumbo_prev = rumbo
+            self.t_muestra = self.t
             self.cur_prev = cur
-        if self.giro_acum > MAREO_UMBRAL and self.estado == "idle" and self.senal is None and self.cuenta is None:
+        if self.giro_acum > MAREO_UMBRAL and self.estado == "idle" and self.senal is None and self.cuenta is None and self.ctl.meta == 0.0:
             if self.expr is None or self.expr["valor"] != "mareado":
                 if self.expr is None:
                     self.expr = {"valor": "mareado", "t0": self.t, "dur": 3.0}
             else:
-                self.expr["dur"] = (self.t - self.expr["t0"]) + 2.0
+                self.expr["dur"] = (self.t - self.expr["t0"]) + 1.4
+        self.toques = [q for q in self.toques if self.t - q["t0"] < 0.5]
+        if self.ctl.meta > 0.0 or self.ctl.x > 0.02:
+            self.huella.apuntar(cur)
+            self.huella.paso(dt)
+            self.huella_cola.apuntar(self.huella.pos())
+            self.huella_cola.paso(dt)
+        else:
+            for m in (self.huella.mx, self.huella_cola.mx):
+                m.x, m.v, m.meta = cur.x(), 0.0, cur.x()
+            for m in (self.huella.my, self.huella_cola.my):
+                m.x, m.v, m.meta = cur.y(), 0.0, cur.y()
         destino = self.senal["destino"] if self.senal is not None else self.destino_cursor()
         self.cuerpo.apuntar(destino)
         self.cuerpo.paso(dt)
@@ -661,7 +754,7 @@ class Capa(QWidget):
             if self.lw.x < 1.0 and self.lh.x < 1.0:
                 self.lab = None
                 self.lab_prev = None
-        for m in (self.radio, self.cara, self.lw, self.lh):
+        for m in (self.radio, self.cara, self.lw, self.lh, self.ctl):
             m.paso(dt)
 
     def tick(self):
@@ -670,6 +763,9 @@ class Capa(QWidget):
         self.ultimo = ahora
         self.avanzar(dt)
         zona = QRegion(self.zona_goo().adjusted(-4, -4, 4, 4))
+        zc = self.zona_control()
+        if zc is not None:
+            zona = zona.united(QRegion(zc))
         if self.senal is not None:
             zona = zona.united(QRegion(self.senal["rect"].adjusted(-70, -70, 70, 70).toAlignedRect()))
         if self.oculto:
@@ -783,6 +879,63 @@ class Capa(QWidget):
         pad = DESENFOQUE * 3.0 + 12.0
         return caja.adjusted(-pad, -pad, pad, pad).toAlignedRect().intersected(QRect(0, 0, self.ancho, self.alto))
 
+    def zona_control(self):
+        if self.ctl.x < 0.02 and self.ctl.meta == 0.0 and not self.toques:
+            return None
+        r = RADIO_CONTROL * 1.4 + 10.0
+        h = self.huella.pos()
+        cl = self.huella_cola.pos()
+        caja = QRectF(h.x() - r, h.y() - r, 2 * r, 2 * r).united(QRectF(cl.x() - r, cl.y() - r, 2 * r, 2 * r))
+        for q in self.toques:
+            caja = caja.united(QRectF(q["p"].x() - 46.0, q["p"].y() - 46.0, 92.0, 92.0))
+        pad = DESENFOQUE * 3.0 + 12.0
+        return caja.adjusted(-pad, -pad, pad, pad).toAlignedRect().intersected(QRect(0, 0, self.ancho, self.alto))
+
+    def formas_control(self, q):
+        e = lim(self.ctl.x, 0.0, 1.25)
+        if e < 0.02:
+            return
+        escribiendo = self.ctl_modo == "escribir"
+        pensando = self.ctl_modo == "pensar"
+        if escribiendo:
+            pulso = 0.09 * math.sin(self.t * 16.0)
+        elif pensando:
+            pulso = 0.12 * math.sin(self.t * 3.2)
+        else:
+            pulso = 0.05 * math.sin(self.t * 6.0)
+        r = RADIO_CONTROL * e * (1.0 + pulso)
+        h = self.huella.pos()
+        vx, vy = self.huella.vel()
+        v = math.hypot(vx, vy)
+        est = 1.0 + min(0.4, 0.2 * v / 600.0)
+        q.save()
+        q.translate(h)
+        if v > 1.0:
+            ang = math.degrees(math.atan2(vy, vx))
+            q.rotate(ang)
+            q.scale(est, 1.0 / est)
+            q.rotate(-ang)
+        q.drawEllipse(QPointF(0, 0), r, r)
+        q.restore()
+        q.drawEllipse(self.huella_cola.pos(), r * 0.7, r * 0.7)
+        vel = 3.0 if escribiendo else (2.4 if pensando else 5.0)
+        for k in range(3):
+            ang = self.t * vel + k * 2.0 * math.pi / 3.0
+            d = r + 3.5 + 2.5 * math.sin(self.t * 3.3 + k * 1.9)
+            q.drawEllipse(QPointF(h.x() + d * math.cos(ang), h.y() + d * math.sin(ang)), 3.0 * e, 3.0 * e)
+
+    def pintar_toques(self, p):
+        for q in self.toques:
+            a = lim((self.t - q["t0"]) / 0.45)
+            if a >= 1.0:
+                continue
+            radio = 8.0 + 32.0 * out_cubic(a)
+            pen = QPen(color(self.accion, 210 * (1.0 - a)), 2.2)
+            p.setPen(pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(q["p"], radio, radio)
+        p.setPen(Qt.PenStyle.NoPen)
+
     def burbuja_expr(self):
         if self.expr is None or self.expr["valor"] not in ("confundido", "sorprendido"):
             return None
@@ -840,6 +993,10 @@ class Capa(QWidget):
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         if self.senal is not None:
             self.pintar_resaltado(p)
+        zc = self.zona_control()
+        if zc is not None and self.ctl.x > 0.02:
+            pintar_goo(p, zc, self.formas_control, self.accion, 0.2, 0.9)
+        self.pintar_toques(p)
         zona = self.zona_goo()
         if self.radio.x > 0.5 or self.pildora_rect() is not None:
             pintar_goo(p, zona, self.formas, self.tema["relleno"], self.tema["sombra"])
@@ -942,19 +1099,25 @@ class Capa(QWidget):
         p.save()
         p.setClipRect(pr.adjusted(4, 0, -4, 0))
         p.setFont(fuente())
+        asc = self.fm.ascent()
+        desc = self.fm.descent()
 
-        def dibujar(texto, rect):
-            if self.fm.horizontalAdvance(texto) <= ANCHO_TARJETA:
-                p.drawText(rect, int(Qt.AlignmentFlag.AlignCenter.value), texto)
+        def dibujar(texto, rect, dy=0.0):
+            ancho_t = self.fm.horizontalAdvance(texto)
+            if ancho_t <= ANCHO_TARJETA:
+                x = round(rect.center().x() - ancho_t / 2.0)
+                y = round(rect.center().y() + (asc - desc) / 2.0 + dy)
+                p.drawText(QPointF(x, y), texto)
             else:
                 banderas = int(Qt.AlignmentFlag.AlignLeft.value) | int(Qt.AlignmentFlag.AlignTop.value) | int(Qt.TextFlag.TextWordWrap.value)
-                p.drawText(rect.adjusted(16, 10, -16, -8), banderas, texto)
+                caja_t = QRectF(round(rect.left()) + 16, round(rect.top() + dy) + 10, round(rect.width()) - 32, round(rect.height()) - 18)
+                p.drawText(caja_t, banderas, texto)
 
         if self.lab_prev is not None and cambio < 1.0:
             p.setPen(color(tinta, 255 * base * (1.0 - cambio)))
             dibujar(self.lab_prev, pr)
         p.setPen(color(tinta, 255 * base * cambio))
-        dibujar(self.lab, pr.translated(0, 3.0 * (1.0 - out_cubic(cambio))))
+        dibujar(self.lab, pr, 3.0 * (1.0 - out_cubic(cambio)))
         p.restore()
         if self.cuenta is not None:
             pr_c = lim((self.t - self.cuenta["t0"]) / max(0.1, self.cuenta["dur"]))
@@ -983,6 +1146,8 @@ def main():
     app = QApplication(sys.argv)
     mostrar_buddy = os.environ.get("JARVIS_BUDDY", "1") != "0"
     capa = Capa(mostrar_buddy)
+    app.aboutToQuit.connect(capa.restaurar)
+    atexit.register(capa.restaurar)
     puente = Puente()
     puente.comando.connect(capa.comando)
     hilo = threading.Thread(target=leer_stdin, args=(puente,), daemon=True)
