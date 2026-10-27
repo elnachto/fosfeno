@@ -1,0 +1,8 @@
+faster-whisper
+sounddevice
+numpy
+mss
+requests
+uiautomation
+Pillow
+PySide6
