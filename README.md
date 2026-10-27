@@ -34,9 +34,12 @@ Todo corre en tu máquina. Nada sale a internet.
 
 - Windows 10 u 11.
 - Python 3.10 o superior.
-- Una GPU con unos 12 GB de VRAM para el modelo (probado con una RTX 5070).
-- [llama.cpp](https://github.com/ggml-org/llama.cpp) con `llama-server`.
-- Los archivos GGUF del modelo de visión y su `mmproj`.
+- GPU NVIDIA con **8 GB de VRAM** o más. El modelo cuantizado (Q4) ocupa unos 4,7 GB, el `mmproj` 0,9 GB y el contexto de 16K unos 1-2 GB más, así que en total usa entre 6 y 7 GB. Se probó con una RTX 5070 de 12 GB.
+- 8 GB de RAM como mínimo (16 GB recomendados). La voz (`faster-whisper`, modelo `small`) corre en la CPU y usa cerca de 1 GB.
+- [llama.cpp](https://github.com/ggml-org/llama.cpp) con `llama-server` compilado con CUDA.
+- Modelo y visión, en GGUF: `NVIDIA-Nemotron-3.5-Bolt-E4B-UD-Q4_K_XL.gguf` y `mmproj-F16.gguf` (o `mmproj-Q8_0.gguf`, que pesa la mitad).
+
+Con menos de 8 GB de VRAM baja el contexto (`-c 8192`) y usa el `mmproj` Q8.
 
 ## Instalación
 
@@ -52,7 +55,7 @@ copy correcciones.ejemplo.txt correcciones.txt
 Arranca el servidor del modelo en otra ventana (ajusta las rutas):
 
 ```
-llama-server -m RUTA\modelo.gguf --mmproj RUTA\mmproj.gguf -ngl 99 -c 16384 -np 1 -fa on --jinja --host 127.0.0.1 --port 8095
+llama-server -m RUTA\NVIDIA-Nemotron-3.5-Bolt-E4B-UD-Q4_K_XL.gguf --mmproj RUTA\mmproj-F16.gguf -ngl 99 -c 16384 -np 1 -fa on --jinja --host 127.0.0.1 --port 8095
 ```
 
 Y luego:
