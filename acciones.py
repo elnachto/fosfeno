@@ -96,7 +96,8 @@ def enviar(vk, escaner, banderas):
     evento = (INPUT * 1)()
     evento[0].type = 1
     evento[0].ki = KEYBDINPUT(vk, escaner, banderas, 0, 0)
-    user32.SendInput(1, evento, ctypes.sizeof(INPUT))
+    if user32.SendInput(1, evento, ctypes.sizeof(INPUT)) != 1:
+        raise OSError("Windows rechazó la entrada de teclado. Comprueba si la aplicación está elevada.")
 
 
 def posicion():
@@ -121,11 +122,16 @@ def mover_suave(x, y):
 
 
 def clic(x, y):
+    if esc_presionado():
+        return False
     user32.SetCursorPos(int(x), int(y))
     time.sleep(0.08)
     user32.mouse_event(0x0002, 0, 0, 0, 0)
-    time.sleep(0.05)
-    user32.mouse_event(0x0004, 0, 0, 0, 0)
+    try:
+        time.sleep(0.05)
+    finally:
+        user32.mouse_event(0x0004, 0, 0, 0, 0)
+    return True
 
 
 def vk_de(nombre):
@@ -157,25 +163,34 @@ def normalizar_tecla(texto):
 
 
 def tecla(nombre):
+    if esc_presionado():
+        return False
     canon = normalizar_tecla(nombre)
     if canon is None:
         return False
     partes = canon.split("+")
     mods = [MODIFICADORES[m] for m in partes[:-1]]
     vk = vk_de(partes[-1])
-    for m in mods:
-        enviar(m, 0, 0)
-    enviar(vk, 0, 0)
-    enviar(vk, 0, KEYEVENTF_KEYUP)
-    for m in reversed(mods):
-        enviar(m, 0, KEYEVENTF_KEYUP)
+    pulsados = []
+    try:
+        for m in mods:
+            enviar(m, 0, 0)
+            pulsados.append(m)
+        enviar(vk, 0, 0)
+        enviar(vk, 0, KEYEVENTF_KEYUP)
+    finally:
+        for m in reversed(pulsados):
+            enviar(m, 0, KEYEVENTF_KEYUP)
     return True
 
 
 def escribir(texto):
     for caracter in texto:
+        if esc_presionado():
+            return False
         if caracter == "\n":
-            tecla("enter")
+            if not tecla("enter"):
+                return False
             continue
         datos = caracter.encode("utf-16-le")
         for i in range(0, len(datos), 2):
@@ -183,6 +198,19 @@ def escribir(texto):
             enviar(0, unidad, KEYEVENTF_UNICODE)
             enviar(0, unidad, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP)
         time.sleep(0.01)
+    return True
+
+
+def desplazar(direccion, cantidad=5):
+    if esc_presionado() or direccion not in ("arriba", "abajo"):
+        return False
+    delta = 120 if direccion == "arriba" else -120
+    for _ in range(cantidad):
+        if esc_presionado():
+            return False
+        user32.mouse_event(0x0800, 0, 0, delta & 0xFFFFFFFF, 0)
+        time.sleep(0.04)
+    return True
 
 
 def esc_presionado():
