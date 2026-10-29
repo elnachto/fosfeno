@@ -127,6 +127,16 @@ class OcrTests(unittest.TestCase):
                 ocr.revisar_accion({'tipo': 'clic', 'n': 1}, e, {}, self.img,
                                    lambda *a: self.fail('El modelo no puede anular el bloqueo de etiquetas'))
 
+    def test_adaptaciones_del_controlador_no_saltan_la_politica(self):
+        estado = {'percepcion_ocr': True, 'archivos_observados': [], 'copias_observadas': []}
+        for tipo in ['importar_plan', 'siguiente', 'recordar']:
+            with self.subTest(tipo=tipo), \
+                 patch.object(agente, 'proponer', return_value=({'tipo': tipo, 'texto': 'dato'}, {}, 0)), \
+                 patch.object(marcas, 'cargar_notas', return_value=''), \
+                 patch.object(marcas, 'ayuda_aplicacion', return_value={}):
+                accion, _, _, _, _ = marcas.decidir_accion('Consulta', self.img, 'Ventana', [], [], estado=estado)
+                self.assertEqual(accion['tipo'], 'nada')
+
 
 if __name__ == '__main__':
     unittest.main()

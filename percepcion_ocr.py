@@ -12,6 +12,12 @@ from precondiciones import normalizar
 import percepcion_visual as visual
 
 _motor = None
+ACCIONES_PILOTO = frozenset(('clic', 'decir', 'esperar', 'preguntar', 'listo', 'nada'))
+
+
+def validar_tipo(accion):
+    if accion['tipo'] not in ACCIONES_PILOTO:
+        raise ValueError('El piloto OCR solo admite lectura provisional y navegación por clic revisado; sin escritura, teclas ni aprendizaje')
 
 
 def detectar(imagen):
@@ -67,8 +73,7 @@ def etiquetas(imagen, region, hwnd, origen=(0, 0), detector=None, limite=120):
 
 def revisar_accion(accion, elementos, estado, imagen, consultar):
     """El piloto solo permite navegación revisada; nunca escritura, teclas o envío."""
-    if accion['tipo'] not in ('clic', 'decir', 'esperar', 'preguntar', 'listo', 'nada'):
-        raise ValueError('El piloto OCR solo admite lectura provisional y navegación por clic revisado; sin escritura, teclas ni aprendizaje')
+    validar_tipo(accion)
     if accion['tipo'] in ('clic', 'decir') and imagen is None:
         raise ValueError('Falta la imagen de la observación visual')
     if accion['tipo'] == 'decir':

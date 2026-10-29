@@ -77,7 +77,7 @@ La prueba separada «abre la vista de servidores DHCP», iniciada con el submen�
 ya abierto, eligió DHCP Server, abrió la vista real y terminó con verificación
 positiva. No sustituye la tarea compuesta. Se ejecutaron cinco clics de navegación
 en total entre las distintas iteraciones, todos revalidados antes de actuar.
-La versión final pasa 164 pruebas del programa; nota/contacto/selector pasan 3/3
+La versión final pasa 165 pruebas del programa; nota/contacto/selector pasan 3/3
 en la regresión conocida con semilla 42, sin falsos éxitos en esa muestra.
 
 Son pruebas de desarrollo sobre un laboratorio conocido, con cambios entre

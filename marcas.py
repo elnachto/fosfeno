@@ -810,6 +810,15 @@ def decidir_accion(objetivo, img, titulo, elementos, historial, ejemplos="", par
                          'ayuda_aplicacion': ayuda_aplicacion(actual)},
             partes=partes, tarea=tarea)
         dato["intentos"] = intentos
+        # También cubre las adaptaciones automáticas posteriores a la propuesta,
+        # como importar un plan breve de una tarea. No pueden saltarse el piloto.
+        if actual.get('percepcion_ocr'):
+            import percepcion_ocr
+            try:
+                percepcion_ocr.validar_tipo(accion)
+            except ValueError as error:
+                dato['rechazo_politica_visual'] = str(error)
+                accion = {'tipo': 'nada', '_evidencia': str(error)}
         if actual.get('percepcion_ocr') and accion.get('_revision_visual'):
             DETALLES_UI.get(elementos[accion['n']-1], {})['revision_visual'] = accion['_revision_visual']
         return accion, json.dumps(dato, ensure_ascii=False), lista, marcada, time.monotonic() - inicio
