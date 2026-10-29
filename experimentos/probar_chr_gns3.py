@@ -101,7 +101,15 @@ def main():
         pruebas.append({'prueba': nombre, 'ok': bool(condicion)})
         print(nombre, 'OK' if condicion else 'FALLO', flush=True)
 
-    mac = re.search(r'MAC\s*:\s*([0-9a-f:]{17})', pc_comando('show ip'), re.I).group(1).upper()
+    info = pc_comando('show ip')
+    limite = time.monotonic() + 15
+    mac_match = re.search(r'MAC\s*:\s*([0-9a-f:]{17})', info, re.I)
+    while not mac_match and time.monotonic() < limite:
+        info += cliente.leer(.5)
+        mac_match = re.search(r'MAC\s*:\s*([0-9a-f:]{17})', info, re.I)
+    if not mac_match:
+        raise ValueError('VPCS no entregó su MAC observada; no crear una reserva')
+    mac = mac_match.group(1).upper()
     previa = comando(':put [/ip dhcp-server lease print count-only where comment="FOSFENO-RESERVA"]')
     reserva_previa = '\n0\n' not in previa.replace('\r', '')
     pc_comando('ip dhcp', 8)

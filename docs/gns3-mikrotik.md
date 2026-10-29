@@ -20,6 +20,15 @@ Es una instalación portable, con acceso directo en Escritorio e Inicio:
   defecto. Se comprobó esta condición después de activar el adaptador de gestión.
 - Los laboratorios MikroTik anteriores no se modificaron.
 
+Al terminar se deja **VPCS apagado** y el router encendido. Su consola interna
+escucha en `0.0.0.0:5002` cuando se inicia el cliente, aunque el proxy GNS3 sea local.
+No se cambió el firewall de Windows. Se actualizó el auxiliar VPCS del paquete
+de 0.6.2 a **0.8.4**, descargado de su repositorio oficial y verificado por SHA-256;
+el original se conserva como respaldo. Esta versión también abre esa consola.
+Tras actualizarlo se repitieron las siete comprobaciones. Para futuras pruebas
+se puede encender `PC-VLAN40` en GNS3 y apagarlo al acabar; no se presenta ese
+estado encendido como completamente limitado a localhost.
+
 GNS3 y RouterOS tienen claves locales aleatorias en la carpeta `configuracion/`
 del laboratorio, fuera del repositorio. Para iniciar sesión manualmente en WebFig,
 consulta `router-local.json`. No copies claves a informes o commits.
@@ -94,10 +103,12 @@ estadística ni garantiza detectar todos los conflictos. Añade coste de inferen
 
 El runner funcional se detuvo antes de escribir cuando la consola aún no había
 terminado de arrancar. Se añadió espera acotada por login/prompt y se repitió.
+Se añadió también espera por la MAC observada de VPCS mientras carga su inicio.
 También se recuperó una consola desconectada tras reabrir el proyecto. Se
 distinguen estos problemas del montaje de los resultados del asistente.
 
 Fuentes: [GNS3 2.2.61](https://github.com/GNS3/gns3-gui/releases/tag/v2.2.61),
 [CHR oficial](https://mikrotik.com/download/chr),
+[VPCS 0.8.4](https://github.com/GNS3/vpcs/releases/tag/v0.8.4),
 [tabla VLAN](https://help.mikrotik.com/docs/spaces/ROS/pages/28606465/Bridge%20VLAN%20Table),
 [DHCP](https://help.mikrotik.com/docs/spaces/ROS/pages/24805500/DHCP).
