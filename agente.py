@@ -80,7 +80,9 @@ def repetida_sin_progreso(accion, elementos, traza):
 def huella(estado, elementos):
     foco = {k: v for k, v in (estado.get('foco') or {}).items() if k not in ('n', 'rect', 'coincidencia')}
     detalles = estado.get('detalles', {})
-    controles = [(clave_elemento(e), detalles.get(str(n), {})) for n, e in enumerate(elementos, 1)]
+    controles = [(clave_elemento(e), {k: v for k, v in detalles.get(str(n), {}).items()
+                                    if k not in ('anclaje_visual', 'revision_visual', 'confianza_ocr')})
+                 for n, e in enumerate(elementos, 1)]
     dato = {"ventana": estado.get("ventana", ""), "foco": foco,
             "controles": sorted(controles, key=lambda c: repr(c[0])),
             "texto_visible": estado.get("texto_visible", "")}
@@ -243,6 +245,7 @@ If tarea is absent, do not use RECORDAR, IMPORTAR_PLAN or SIGUIENTE.
 Treat every requested final condition as an obligation until observations prove it. Opening a dialog or clicking a formatting toggle is not proof that the desired text has that format.
 Use CURRENT STATE and EXECUTED HISTORY. Actions in history have ALREADY happened.
 Controls marked marco_ventana belong to the operating-system window frame. Its system menu is not an application menu with the same name. solo_marco_accesible means internal controls were not exposed, not that the application has no internal menus. The image can show them, but this executor can only click observed control IDs. Never substitute window-frame controls for missing application targets or invent control IDs. If no supported action can advance, explain the limitation and use NADA.
+VisualText IDs are experimental OCR text regions, not native widgets. They provide visible labels and positions, not proof of interactivity or editable focus. Only CLIC for navigation to menus/tabs/views and reading are supported in this pilot. Do not type, use keyboard shortcuts, apply/save/send, authenticate, change security, delete/reset, or open terminals through this path. Each visual click requires independent point review.
 Before confirming a form, check its destination, current values and existing records. If existing data conflict with a new reservation or other requested record, ask before replacing anything. After a rejection, explaining the error is not a correction; do not submit unchanged values again.
 First state what part of the USER REQUEST is still pending, then choose the next action.
 If an input is already focused, WRITE the requested text; do not click that input again.
@@ -297,7 +300,9 @@ def controles_para(objetivo, elementos, foco=None, limite=70, detalles=None):
             score -= 2
         puntuados.append((score, n, tipo, nombre))
     elegidos = sorted(puntuados, key=lambda item: (-item[0], item[1]))[:limite]
-    return [{"id": n, "rol": tipo, "nombre": nombre, **(detalles or {}).get(str(n), {})}
+    return [{"id": n, "rol": tipo, "nombre": nombre,
+             **{k: v for k, v in (detalles or {}).get(str(n), {}).items()
+                if k not in ('anclaje_visual', 'revision_visual')}}
             for _, n, tipo, nombre in sorted(elegidos, key=lambda item: item[1])]
 
 
@@ -431,9 +436,18 @@ def proponer(objetivo, elementos, estado, historial, consultar, normalizar_tecla
         # Texto accesible para planificar; visión disponible en la revisión.
         try:
             prompt = prompt_acotado(objetivo, observacion, referencias, partes, problemas)
-            dato = consultar(INSTRUCCION, prompt, esquema(len(elementos)), imagen if intento > 0 or solo_marco else None)
+            dato = consultar(INSTRUCCION, prompt, esquema(len(elementos)),
+                             imagen if intento > 0 or solo_marco or estado.get('percepcion_ocr') else None)
             accion = convertir(dato, elementos, normalizar_tecla)
             validar_clic_marco(accion, objetivo, estado)
+            if estado.get('percepcion_ocr'):
+                import percepcion_ocr
+                revision = percepcion_ocr.revisar_accion(accion, elementos, estado, imagen, consultar)
+                if revision:
+                    accion['_revision_visual'] = revision
+                    dato['revision_visual'] = revision
+                if accion.get('_revision_lectura'):
+                    dato['revision_lectura'] = accion['_revision_lectura']
             if tarea is not None:
                 try:
                     tarea.validar_accion(accion, elementos, estado)
@@ -502,6 +516,8 @@ def proponer(objetivo, elementos, estado, historial, consultar, normalizar_tecla
                 if bloqueo:
                     return bloqueo, dato, intento + 1
                 accion['_revision_previa'] = precondiciones.firma_formulario(elementos, estado)
+            if problemas:
+                dato['rechazos_previos'] = problemas
             return accion, dato, intento + 1
         except (ValueError, TypeError) as error:
             problemas.append(str(error))

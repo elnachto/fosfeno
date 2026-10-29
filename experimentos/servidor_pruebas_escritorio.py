@@ -16,7 +16,7 @@ import secrets
 import sys
 import time
 from urllib.parse import urlparse
-from PIL import ImageDraw
+from PIL import Image, ImageDraw
 
 BASE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE))
@@ -27,6 +27,9 @@ import memoria
 import parametros
 import tareas
 import uiautomation as auto
+
+CODIGO_AUDITADO = ('agente.py', 'marcas.py', 'jarvis.py', 'motor_ia.py',
+                   'percepcion_visual.py', 'percepcion_ocr.py', 'percepcion_win32.py')
 
 
 def main():
@@ -79,18 +82,27 @@ def main():
             if propietario not in sesion['ventanas']:
                 raise ValueError('La ventana activa no está registrada para esta prueba')
             imagen = marcas.grab()
-            titulo, elementos, truncado = marcas.reunir(*imagen.size, incluir_barra=False)
-            estado = copy.deepcopy(marcas.ESTADO_UI)
-            if estado['hwnd'] != actual:
-                raise ValueError('La ventana cambió durante la observación')
+            r = top.BoundingRectangle
+            ox, oy = marcas.MONITOR['left'], marcas.MONITOR['top']
+            region_ventana = (max(0, r.left-ox), max(0, r.top-oy),
+                              min(imagen.width, r.right-ox), min(imagen.height, r.bottom-oy))
+            acotada = Image.new('RGB', imagen.size, (100, 100, 100))
+            acotada.paste(imagen.crop(region_ventana), region_ventana[:2])
+            imagen = acotada
+            region_oculta = None
             if args.ocultar_derecha:
                 ancho, alto = imagen.size
                 if args.ocultar_derecha >= ancho / 3:
                     raise ValueError('La franja ocultaría demasiado contenido; preparar la ventana de nuevo')
                 imagen = imagen.copy()
-                region = [ancho - args.ocultar_derecha, 0, ancho, alto]
-                ImageDraw.Draw(imagen).rectangle(region, fill=(100, 100, 100))
-                estado['regiones_imagen_ocultadas'] = [region]
+                region_oculta = [ancho - args.ocultar_derecha, 0, ancho, alto]
+                ImageDraw.Draw(imagen).rectangle(region_oculta, fill=(100, 100, 100))
+            titulo, elementos, truncado = marcas.reunir(*imagen.size, incluir_barra=False, imagen=imagen)
+            estado = copy.deepcopy(marcas.ESTADO_UI)
+            if estado['hwnd'] != actual:
+                raise ValueError('La ventana cambió durante la observación')
+            if region_oculta:
+                estado['regiones_imagen_ocultadas'] = [region_oculta]
             return imagen, titulo, elementos, estado, truncado
 
         def do_POST(self):
@@ -102,6 +114,9 @@ def main():
                 if ruta == '/caso':
                     importlib.reload(agente)
                     importlib.reload(marcas)
+                    for modulo in ('percepcion_visual', 'percepcion_ocr'):
+                        if modulo in sys.modules:
+                            importlib.reload(sys.modules[modulo])
                     marcas.PERFIL = dict(marcas.PERFIL, semilla=42, cache_prompt=False)
                     ident = datos['id']
                     if not ident.replace('-', '').isalnum():
@@ -126,7 +141,7 @@ def main():
                                   traza=[], resultados=[], pendiente=None,
                                   sin_recetas=bool(datos.get('sin_recetas')),
                                   codigo_sha256={n: hashlib.sha256((BASE / n).read_bytes()).hexdigest()
-                                                 for n in ('agente.py', 'marcas.py', 'jarvis.py')})
+                                                 for n in CODIGO_AUDITADO})
                     self.guardar()
                     return self.responder({'creado': ident})
                 if not sesion:
@@ -166,6 +181,15 @@ def main():
                     return self.responder({'confirmada': texto})
                 with auto.UIAutomationInitializerInThread():
                     marcas.preparar_dpi()
+                    if ruta == '/validar-destino':
+                        actual = sesion.get('actual', {})
+                        if actual.get('accion', {}).get('tipo') != 'clic':
+                            raise ValueError('No hay un clic pendiente')
+                        e = actual['elementos'][actual['accion']['n']-1]
+                        vigente = marcas.validar_destino(e, actual['estado']['hwnd'])
+                        sesion['resultados'][-1]['destino_revalidado'] = vigente
+                        self.guardar()
+                        return self.responder({'vigente': vigente})
                     imagen, titulo, elementos, estado, truncado = self.observar()
                     if ruta == '/estado':
                         return self.responder({'estado': estado, 'elementos': elementos, 'truncado': truncado})
@@ -205,7 +229,7 @@ def main():
                                                                     feedback=sesion.pop('feedback', ''), ejemplos=ejemplos,
                                                                     tarea=tarea_actual[0])
                     resultado = {'accion': accion, 'crudo': crudo, 'ventana': titulo, 'estado': estado,
-                                 'codigo_sha256': {n: hashlib.sha256((BASE / n).read_bytes()).hexdigest() for n in ('agente.py', 'marcas.py', 'jarvis.py')},
+                                 'codigo_sha256': {n: hashlib.sha256((BASE / n).read_bytes()).hexdigest() for n in CODIGO_AUDITADO},
                                  'elementos': elementos, 'truncado': truncado, 'segundos': round(time.monotonic() - inicio, 3)}
                     if accion['tipo'] in ('listo', 'nada'):
                         estado['archivos_observados'] = marcas.evidencia_archivos(sesion['objetivo'])

@@ -236,6 +236,10 @@ Cosas para probar:
 
 ## Seguridad y privacidad
 
+Hay un [piloto de percepción OCR para ventanas con pocos controles accesibles](docs/percepcion-hibrida.md).
+Está desactivado por defecto. Permite experimentar con navegación por etiquetas
+visuales; todavía falla al relacionar datos de tablas y no habilita edición ni aprendizaje visual.
+
 - **Puede hacer clic y escribir como si fueras tú.** Úsalo en ventanas donde un error no cause daño. Todavía no pide confirmación antes de acciones sensibles (enviar, borrar, pagar); está en la lista de pendientes.
 - El texto y los nombres de la pantalla se tratan como **datos, nunca como órdenes**; solo cuenta lo que dices tú. Aun así, un modelo pequeño puede equivocarse.
 - Lo que aprende se guarda en `conocimiento/` (recetas y notas por app) y puede incluir texto que escribas o nombres que vea. **Está excluido de git** salvo la nota de ejemplo de Visual Studio Code. Revísalo antes de compartirlo.

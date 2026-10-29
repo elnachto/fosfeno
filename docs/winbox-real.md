@@ -79,3 +79,11 @@ su panel administrativo; no se generaliza ese hallazgo a toda la versión 3.
 WinBox 4 queda conectado. Se conservan condiciones, trazas, metadatos de visión,
 incidencias y verificaciones. El token del evaluador y las credenciales quedan
 fuera de Git y del paquete compartible.
+
+## Continuación experimental
+
+Se implementó después un [piloto OCR de percepción híbrida](percepcion-hibrida.md),
+desactivado por defecto. Permitió navegar a Interfaces e IP/Addresses con posiciones
+detectadas en cada captura, sin una macro de menús. La lectura compuesta sigue
+incompleta y presentó asociaciones incorrectas; no sustituye los resultados de
+esta primera ronda ni acredita configuración autónoma de RouterOS.

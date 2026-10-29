@@ -305,7 +305,7 @@ def escanear():
     img = marcas.grab()
     capa.enviar(cmd="mostrar_capa")
     ancho, alto = img.size
-    titulo, elementos, truncado = marcas.reunir(ancho, alto)
+    titulo, elementos, truncado = marcas.reunir(ancho, alto, imagen=img)
     return img, titulo, elementos
 
 
@@ -478,7 +478,7 @@ def _ejecutar_tarea(objetivo, escaneo, sello, tarea):
                             avisar("No pude comprobar que la tarea esté terminada.", expresion="confundido")
                             return
                         continue
-                if historial and not compuesto and verificado:
+                if historial and not compuesto and verificado and not marcas.PERFIL.get('vision_experimental'):
                     guardar_exito(app_inicial, objetivo, [("dije lo que se veía en pantalla" if h.startswith("dije «") else h) for h in historial])
                 capa.enviar(cmd="plan", hechos=len(historial), activo=False)
                 capa.enviar(cmd="estado", valor="idle")
@@ -543,6 +543,10 @@ def _ejecutar_tarea(objetivo, escaneo, sello, tarea):
                     feedback = 'El formulario cambió o la recaptura es parcial. Revisa sus valores otra vez antes de confirmar.'
                     continue
                 control("mover")
+                if elemento[0] == 'VisualText':
+                    capa.enviar(cmd="ocultar")
+                    if capa.activa():
+                        time.sleep(0.15)
                 if not marcas.validar_destino(elemento, estado_actual.get("hwnd")):
                     feedback = "El control cambió después de observarlo. Identifica de nuevo el destino en la pantalla actual."
                     anterior = None

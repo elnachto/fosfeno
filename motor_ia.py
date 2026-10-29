@@ -57,4 +57,6 @@ def cargar():
     elegido = args.motor or os.environ.get("FOSFENO_MOTOR") or cfg.get("motor_ia", "nemotron")
     if elegido not in PERFILES:
         raise ValueError("Motor de IA desconocido: " + str(elegido) + ". Usa " + ", ".join(PERFILES))
-    return elegido, dict(PERFILES[elegido])
+    perfil = dict(PERFILES[elegido])
+    perfil['vision_experimental'] = os.environ.get('FOSFENO_VISION_EXPERIMENTAL', '') == '1'
+    return elegido, perfil

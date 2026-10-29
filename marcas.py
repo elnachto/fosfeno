@@ -433,12 +433,31 @@ def es_app_activa(nombre, titulo):
     return t == app or t.endswith(" - " + app) or t.startswith(app + " - ")
 
 
-def reunir(ancho, alto, incluir_barra=True):
+def reunir(ancho, alto, incluir_barra=True, imagen=None):
     TEXTO_UI.clear()
     DETALLES_UI.clear()
     top = auto.GetForegroundControl()
     titulo = top.Name or ""
     elementos, truncado = recorrer(top, ancho, alto, "", MAX_ELEMENTOS)
+    # Solo cuando UIA no expone el contenido. Nunca sustituir campos nativos.
+    visual = False
+    error_visual = ''
+    if PERFIL.get('vision_experimental') and imagen is not None and not any(
+            not DETALLES_UI.get(e, {}).get('marco_ventana') for e in elementos):
+        try:
+            import percepcion_ocr
+            r = top.BoundingRectangle
+            ox, oy = MONITOR['left'], MONITOR['top']
+            region = (max(0, r.left-ox), max(0, r.top-oy), min(ancho, r.right-ox), min(alto, r.bottom-oy))
+            extra, detalles, parcial = percepcion_ocr.etiquetas(
+                imagen, region, int(top.NativeWindowHandle), (ox, oy))
+            elementos += extra
+            DETALLES_UI.update(detalles)
+            TEXTO_UI.extend(e[1] for e in extra)
+            truncado = truncado or parcial
+            visual = bool(extra)
+        except Exception as error:
+            error_visual = type(error).__name__ + ': ' + str(error)[:180]
     if incluir_barra and top.ClassName not in ("Shell_TrayWnd", "Shell_SecondaryTrayWnd"):
         barra = raiz_barra_tareas()
         if barra is not None:
@@ -448,6 +467,9 @@ def reunir(ancho, alto, incluir_barra=True):
     ESTADO_UI.clear()
     ESTADO_UI.update(capturar_estado(titulo, elementos, top))
     ESTADO_UI['captura_incompleta'] = truncado
+    ESTADO_UI['percepcion_ocr'] = visual
+    if error_visual:
+        ESTADO_UI['error_percepcion_ocr'] = error_visual
     return titulo, elementos, truncado
 
 
@@ -554,6 +576,14 @@ def validar_destino(elemento, hwnd=None):
     try:
         if hwnd and int(auto.GetForegroundControl().NativeWindowHandle) != hwnd:
             return False
+        if tipo == 'VisualText':
+            import percepcion_visual
+            d = DETALLES_UI.get(elemento, {})
+            if d.get('revision_visual', {}).get('tipo') != 'navegacion' or not d.get('revision_visual', {}).get('coincide'):
+                return False
+            imagen = grab()
+            return percepcion_visual.anclaje_vigente(d.get('anclaje_visual'), imagen, hwnd,
+                                                    (MONITOR['left'], MONITOR['top']))
         ctrl = auto.ControlFromPoint((x0 + x1) // 2, (y0 + y1) // 2)
         for _ in range(4):
             if ctrl is None:
@@ -780,6 +810,8 @@ def decidir_accion(objetivo, img, titulo, elementos, historial, ejemplos="", par
                          'ayuda_aplicacion': ayuda_aplicacion(actual)},
             partes=partes, tarea=tarea)
         dato["intentos"] = intentos
+        if actual.get('percepcion_ocr') and accion.get('_revision_visual'):
+            DETALLES_UI.get(elementos[accion['n']-1], {})['revision_visual'] = accion['_revision_visual']
         return accion, json.dumps(dato, ensure_ascii=False), lista, marcada, time.monotonic() - inicio
     notas = cargar_notas(titulo)
     bloque = ""

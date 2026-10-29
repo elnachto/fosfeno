@@ -181,3 +181,14 @@ Se conserva una incidencia del adaptador con ejecución desconocida y una
 confirmación invalidada; no se cuenta como navegación realizada. La detección
 del marco y la imagen inicial se corrigieron de forma general. Pasan 144 pruebas
 del programa y tres regresiones conocidas de Nemotron, sin falsos éxitos en ellas.
+
+## Piloto posterior de percepción híbrida
+
+El [piloto OCR opcional](percepcion-hibrida.md) permitió cinco clics de navegación
+ejecutados por operador sobre propuestas del controlador. La apertura separada
+de DHCP Server llegó a LISTO y verificación positiva. La lectura compuesta de
+todas las IPv4 y DHCP **no se completó** y produjo errores de asociación; el
+revisor también aceptó hechos incorrectos. Se deshabilitó aprendizaje en ese modo.
+Sobre una captura fija conocida, OCR localizó tres etiquetas; la rejilla inicial
+eligió tres celdas erróneas y se abstuvo después. No es un benchmark ciego.
+La regresión separada de nota/contacto/selector volvió a pasar 3/3 con semilla 42.
