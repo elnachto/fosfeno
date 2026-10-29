@@ -53,8 +53,10 @@ WebFig respondió HTTP 200 y el puerto local de WinBox aceptó conexión.
 
 Se operó RouterOS por la consola local de GNS3 con comandos controlados de
 laboratorio. **Esto no demuestra que Fosfeno haya configurado WinBox o WebFig
-autónomamente.** La GUI GNS3 se abrió y se inspeccionó. El ensayo del agente
-en la interfaz de administración del router sigue pendiente.
+autónomamente.** La GUI GNS3 se abrió y se inspeccionó. En un ensayo posterior
+de [WinBox real](winbox-real.md), el agente leyó datos visibles correctamente,
+pero la navegación quedó bloqueada por controles internos no expuestos a UIA.
+La creación de reservas desde WinBox sigue sin validarse.
 
 El auxiliar requiere Python **3.12**, `requests`, el laboratorio preparado y
 sus credenciales locales. Comprueba nombre de VM, host loopback e identidad

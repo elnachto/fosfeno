@@ -169,3 +169,15 @@ de envíos idénticos rechazados; pasan 140 pruebas del programa y una regresió
 Nemotron separada de tres casos conocidos. El revisor logró 8/12 decisiones
 exactas en su tercera ronda, con cuatro aclaraciones innecesarias. El documento
 enlazado conserva el historial de desarrollo y distingue todas estas mediciones.
+
+## WinBox real: lectura y navegación por separado
+
+En el [ensayo posterior de WinBox 4.4](winbox-real.md), UIA solo expuso el marco
+de la ventana. La consulta que requería abrir menús quedó bloqueada; las tareas
+de creación y conflicto no se ejecutaron. Un control positivo exploratorio
+añadido después leyó correctamente nombre, modelo y versión ya visibles, con
+DECIR, LISTO y verificación final. No constituye una tasa de éxito global.
+Se conserva una incidencia del adaptador con ejecución desconocida y una
+confirmación invalidada; no se cuenta como navegación realizada. La detección
+del marco y la imagen inicial se corrigieron de forma general. Pasan 144 pruebas
+del programa y tres regresiones conocidas de Nemotron, sin falsos éxitos en ellas.

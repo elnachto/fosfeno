@@ -16,6 +16,20 @@ def es_editable(tipo):
     return tipo.split(":")[-1] in ROLES_EDITABLES
 
 
+def solo_marco_accesible(elementos, estado):
+    propios = [(n, e) for n, e in enumerate(elementos, 1) if not e[0].startswith('BarraDeTareas:')]
+    return bool(propios) and all(estado.get('detalles', {}).get(str(n), {}).get('marco_ventana') is True
+                                for n, _ in propios)
+
+
+def validar_clic_marco(accion, objetivo, estado):
+    if accion['tipo'] != 'clic' or not estado.get('detalles', {}).get(str(accion['n']), {}).get('marco_ventana'):
+        return
+    if not re.search(r'\b(cierra|cerrar|salir|minimiza|minimizar|maximiza|maximizar|restaura|restaurar|mueve|mover|redimensiona|redimensionar|close|exit|minimize|maximize|restore|resize)\b', normalizar(objetivo)):
+        raise ValueError('Ese control pertenece al marco de Windows, no al contenido de la aplicación. '
+                         'No abre sus menús internos. Si no hay destinos accesibles para avanzar, explica la limitación y usa NADA.')
+
+
 def normalizar(texto):
     texto = str(texto).replace('\r\n', '\n').replace('\r', '\n')
     return "".join(c for c in unicodedata.normalize("NFD", texto.lower()) if not unicodedata.combining(c))
@@ -228,6 +242,7 @@ PREGUNTAR: ask a concise clarification and stop if required variables, operation
 If tarea is absent, do not use RECORDAR, IMPORTAR_PLAN or SIGUIENTE.
 Treat every requested final condition as an obligation until observations prove it. Opening a dialog or clicking a formatting toggle is not proof that the desired text has that format.
 Use CURRENT STATE and EXECUTED HISTORY. Actions in history have ALREADY happened.
+Controls marked marco_ventana belong to the operating-system window frame. Its system menu is not an application menu with the same name. solo_marco_accesible means internal controls were not exposed, not that the application has no internal menus. The image can show them, but this executor can only click observed control IDs. Never substitute window-frame controls for missing application targets or invent control IDs. If no supported action can advance, explain the limitation and use NADA.
 Before confirming a form, check its destination, current values and existing records. If existing data conflict with a new reservation or other requested record, ask before replacing anything. After a rejection, explaining the error is not a correction; do not submit unchanged values again.
 First state what part of the USER REQUEST is still pending, then choose the next action.
 If an input is already focused, WRITE the requested text; do not click that input again.
@@ -394,9 +409,11 @@ def proponer(objetivo, elementos, estado, historial, consultar, normalizar_tecla
                       '_adaptacion': 'importar_plan_breve_observado'}
             return accion, {'origen': 'controlador', 'accion': 'IMPORTAR_PLAN', 'texto': texto}, 0
     foco = dict(estado.get("foco") or {})
+    solo_marco = solo_marco_accesible(elementos, estado)
     controles = controles_para(objetivo, elementos, foco, detalles=estado.get("detalles"))
     observacion = {
         "ventana": estado.get("ventana", ""), "foco": foco,
+        'solo_marco_accesible': solo_marco,
         'captura_incompleta': bool(estado.get('captura_incompleta')),
         'archivos_observados': estado.get('archivos_observados', []),
         'copias_observadas': estado.get('copias_observadas', []),
@@ -414,8 +431,9 @@ def proponer(objetivo, elementos, estado, historial, consultar, normalizar_tecla
         # Texto accesible para planificar; visión disponible en la revisión.
         try:
             prompt = prompt_acotado(objetivo, observacion, referencias, partes, problemas)
-            dato = consultar(INSTRUCCION, prompt, esquema(len(elementos)), imagen if intento > 0 else None)
+            dato = consultar(INSTRUCCION, prompt, esquema(len(elementos)), imagen if intento > 0 or solo_marco else None)
             accion = convertir(dato, elementos, normalizar_tecla)
+            validar_clic_marco(accion, objetivo, estado)
             if tarea is not None:
                 try:
                     tarea.validar_accion(accion, elementos, estado)

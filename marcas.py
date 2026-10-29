@@ -307,6 +307,19 @@ def detalles_celda(ctrl):
     return dato
 
 
+def padre_es_marco_ventana(padre):
+    """Distingue el marco del SO por jerarquía UIA, sin nombres de aplicaciones."""
+    try:
+        if padre.ControlTypeName == 'TitleBarControl':
+            return True
+        if padre.ControlTypeName == 'MenuBarControl':
+            abuelo = padre.GetParentControl()
+            return bool(abuelo and abuelo.ControlTypeName == 'TitleBarControl')
+    except Exception:
+        pass
+    return False
+
+
 def recorrer(raiz, ancho, alto, prefijo, tope):
     crudos = []
     vistos = set()
@@ -348,6 +361,8 @@ def recorrer(raiz, ancho, alto, prefijo, tope):
                 padre = ctrl.GetParentControl()
                 if padre:
                     detalles['contenedor'] = (padre.ControlTypeName.replace('Control', '') + ': ' + (padre.Name or ''))[:100]
+                    if padre_es_marco_ventana(padre):
+                        detalles['marco_ventana'] = True
                     if padre.ControlTypeName == 'ToolBarControl':
                         ubicacion = re.fullmatch(r'(?:Dirección|Direccion|Address): ([A-Za-z]:\\.+)', padre.Name or '', re.I)
                         if ubicacion and len(ubicacion[1]) <= 512:

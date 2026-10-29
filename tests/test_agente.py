@@ -20,6 +20,42 @@ def respuesta(accion, n=0, texto=''):
 
 
 class AgenteTests(unittest.TestCase):
+    def test_marco_se_identifica_por_jerarquia_no_por_nombre_sistema(self):
+        titulo = SimpleNamespace(ControlTypeName='TitleBarControl')
+        menu_so = SimpleNamespace(ControlTypeName='MenuBarControl', GetParentControl=lambda: titulo)
+        menu_app = SimpleNamespace(ControlTypeName='MenuBarControl', GetParentControl=lambda: SimpleNamespace(ControlTypeName='WindowControl'))
+        self.assertTrue(marcas.padre_es_marco_ventana(titulo))
+        self.assertTrue(marcas.padre_es_marco_ventana(menu_so))
+        self.assertFalse(marcas.padre_es_marco_ventana(menu_app))
+
+    def test_marco_no_suplanta_menu_interno_y_no_impide_cerrar_pedido(self):
+        estado = {'detalles': {'1': {'marco_ventana': True}}}
+        with self.assertRaisesRegex(ValueError, 'marco de Windows'):
+            agente.validar_clic_marco({'tipo': 'clic', 'n': 1}, 'Consulta la configuración de red', estado)
+        agente.validar_clic_marco({'tipo': 'clic', 'n': 1}, 'Cierra esta ventana', estado)
+        agente.validar_clic_marco({'tipo': 'clic', 'n': 2}, 'Consulta la configuración', estado)
+
+    def test_solo_marco_recibe_imagen_desde_primera_consulta(self):
+        estado = {'detalles': {'1': {'marco_ventana': True}}}
+        elementos = [('MenuItem', 'Sistema', 0, 0, 20, 20)]
+        imagen, vistas = object(), []
+        def consultar(*args):
+            vistas.append(args)
+            return respuesta('NADA')
+        accion, _, _ = agente.proponer('Consulta la red', elementos, estado, [], consultar, acciones.normalizar_tecla, imagen=imagen)
+        self.assertEqual(accion['tipo'], 'nada')
+        self.assertIs(vistas[0][3], imagen)
+        self.assertTrue(json.loads(vistas[0][1].split('CURRENT STATE:\n')[1])['solo_marco_accesible'])
+        self.assertFalse(agente.solo_marco_accesible(ELEMENTOS, estado))
+
+    def test_insistir_en_marco_para_tarea_interna_se_rechaza_sin_ejecutar(self):
+        estado = {'detalles': {'1': {'marco_ventana': True}}}
+        accion, _, intentos = agente.proponer('Averigua las IP', [('MenuItem', 'Sistema', 0, 0, 20, 20)], estado,
+                                             [], lambda *a: respuesta('CLIC', 1), acciones.normalizar_tecla)
+        self.assertEqual(accion['tipo'], 'nada')
+        self.assertEqual(intentos, 3)
+        self.assertIn('marco de Windows', accion['_evidencia'])
+
     def test_celda_conserva_asociacion_fila_columna_y_no_es_campo_editable(self):
         ctrl = SimpleNamespace(GetGridItemPattern=lambda: SimpleNamespace(Row=2, Column=0, ContainingGrid=SimpleNamespace(Name='Reservas existentes')),
                                GetTableItemPattern=lambda: SimpleNamespace(GetColumnHeaderItems=lambda: [SimpleNamespace(Name='IP')]))

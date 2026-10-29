@@ -16,6 +16,7 @@ import secrets
 import sys
 import time
 from urllib.parse import urlparse
+from PIL import ImageDraw
 
 BASE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE))
@@ -34,7 +35,11 @@ def main():
     parser.add_argument('--puerto', type=int, default=8103)
     parser.add_argument('--conocimiento', type=Path, help='Carpeta aislada de recetas del ensayo')
     parser.add_argument('--memoria-tarea', action='store_true', help='Ejercitar memoria y cierre del controlador actual')
+    parser.add_argument('--ocultar-derecha', type=int, default=0,
+                        help='Ancho de una franja externa que se oculta en la imagen, conservando dimensiones y coordenadas')
     args = parser.parse_args()
+    if not 0 <= args.ocultar_derecha <= 400:
+        parser.error('La franja debe estar entre 0 y 400 pixeles')
     args.salida.mkdir(parents=True, exist_ok=True)
     token, sesion = secrets.token_urlsafe(24), {}
     tarea_actual = [None]
@@ -78,6 +83,14 @@ def main():
             estado = copy.deepcopy(marcas.ESTADO_UI)
             if estado['hwnd'] != actual:
                 raise ValueError('La ventana cambió durante la observación')
+            if args.ocultar_derecha:
+                ancho, alto = imagen.size
+                if args.ocultar_derecha >= ancho / 3:
+                    raise ValueError('La franja ocultaría demasiado contenido; preparar la ventana de nuevo')
+                imagen = imagen.copy()
+                region = [ancho - args.ocultar_derecha, 0, ancho, alto]
+                ImageDraw.Draw(imagen).rectangle(region, fill=(100, 100, 100))
+                estado['regiones_imagen_ocultadas'] = [region]
             return imagen, titulo, elementos, estado, truncado
 
         def do_POST(self):
