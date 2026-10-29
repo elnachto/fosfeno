@@ -184,7 +184,14 @@ def tecla(nombre):
     return True
 
 
+def seleccionar_todo():
+    # Ctrl+A es Abrir en algunos editores traducidos. Las teclas de posición
+    # seleccionan desde el principio hasta el final del campo/documento.
+    return tecla('ctrl+inicio') and tecla('ctrl+shift+fin')
+
+
 def escribir(texto):
+    texto = texto.replace('\r\n', '\n').replace('\r', '\n')
     for caracter in texto:
         if esc_presionado():
             return False

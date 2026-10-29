@@ -85,6 +85,87 @@ evalúa el rechazo de falsos éxitos finales.
 
 El 16/16 simulado y el 0/3 de esta ronda miden condiciones distintas. Antes
 de atribuir los fallos al modelo hay que distinguir planificación, captura
-del estado, validación del foco e inyección de entradas. La memoria de mapas
-y recetas aún no llega a la rama nueva que decide acciones; tampoco debe
-atribuirse un efecto de aprendizaje a estas cifras.
+del estado, validación del foco e inyección de entradas. Durante esta ronda la
+memoria de mapas y recetas no llegaba a la rama nueva que decidía acciones.
+Después se corrigió esa conexión y se añadió una prueba de regresión; estos
+resultados históricos no se volvieron a medir y no demuestran un efecto de aprendizaje.
+
+## Tutor experimental con manuales
+
+La [evaluación del tutor](tutor-experimental.md) separa tres diagnósticos
+textuales de una red construida en Packet Tracer. La red pasó de Successful
+a Failed al cambiar una IP, volvió a Successful con la corrección y superó
+una prueba nueva después de guardar y reabrir. El operador tradujo la guía
+a acciones; no fue autonomía completa de Fosfeno ni una prueba de visión.
+La consulta documental produjo errores técnicos y de restricciones, y el
+revisor del mismo modelo produjo falsos rechazos. No se suma esta red a las
+tareas simuladas ni al 0/3 histórico de otras aplicaciones.
+
+## Segunda ronda de escritorio: 29 de octubre
+
+El [informe de la segunda ronda](pruebas-escritorio-2026-10-29.md) documenta
+las correcciones del controlador y 15 registros entre diagnósticos, casos de
+desarrollo y regresiones. Una regresión nueva del Explorador, con código fijo
+durante el caso, completó seis acciones con copias idénticas y final aceptado.
+Otra copió correctamente, pero el verificador produjo un falso rechazo.
+Las tareas de texto y guardado mejoraron; reconocer el final de una nota
+requirió rechazar reemplazos idénticos. El formato complejo de Word sigue
+incompleto, incluso con una referencia experimental por aplicación.
+
+Se mantienen separados éxito funcional, aceptación del verificador y
+asistencia del operador. Las correcciones durante una tarea no cuentan como
+ejecuciones nuevas con código fijo. Se comprobaron archivos reales y hashes,
+y pasaron 87 pruebas automatizadas del programa. Solo se usó Nemotron; no se
+repitió la comparación con LFM3 ni el recorrido nativo completo de voz y
+entradas. Esta ronda no cambia las cifras históricas anteriores.
+
+## Memoria breve y parámetros: ampliación posterior
+
+La [ampliación de tareas y parámetros](tareas-y-parametros.md) tiene 124 pruebas
+automatizadas del programa. Se ensayaron tres escenarios sintéticos con dos
+semillas: leer y usar una cantidad en otro formulario, ejecutar instrucciones
+breves de una nota y reutilizar una receta con otra MAC/IPv4/VLAN. Tras cinco
+rondas de desarrollo sobre esos mismos casos, la última registró seis resultados
+correctos y seis finales aceptados, sin falsos éxitos en la muestra. Se conservan
+los fallos y cambios de las rondas anteriores.
+
+La importación literal de notas breves y la transición a verificar la lectura
+incluyen adaptaciones del controlador identificadas en la traza. La quinta ronda
+también alinea la recuperación NADA del laboratorio con la existente en Jarvis.
+Los planes iniciales se proporcionaron al laboratorio. No son casos independientes,
+escritorio real ni operación de MikroTik. No se modifica la comparación histórica
+de modelos ni la limitación de formato complejo de Word. La entrada máxima de
+esta matriz fue de 2394 tokens sin imágenes, sobre contexto del servidor 16384.
+
+Como regresión separada se repitieron nota, contacto y selector, semilla 42:
+tres de tres completas y verificadas, sin falsos éxitos. Son casos conocidos
+del laboratorio previo y tampoco prueban el escritorio real.
+
+## Interfaz visible ficticia de MikroTik
+
+El [ensayo de reservas DHCP](mikrotik-simulado.md) usa una GUI Qt visible,
+captura UIA real y entradas mediante adaptador. La receta se registró con
+señales de los controles y se guardó en memoria aislada; no se probó el grabador
+de voz/atajos. Se comparó con/sin receta y se hizo una contraprueba con el servidor
+correcto segundo. Las tareas válidas completaron el guardado exacto; la condición
+sin receta también lo consiguió. No hay evidencia de mejora causal por aprender.
+
+El caso de IP ocupada falló antes de aplicar: aun recibiendo las celdas de la
+tabla, el modelo intentó guardar. El backend ficticio rechazó el cambio, después
+el modelo explicó el conflicto y volvió a proponer Guardar; el operador detuvo
+ese segundo intento. Con producción no identificada pidió aclaración antes de
+aplicar, pero hubo un desvío al selector de escenarios. Se conservaron los fallos,
+las preinspecciones y una incidencia DPI del adaptador. Los detalles distinguen
+protecciones del controlador, del simulador y decisiones del modelo. Pasan 128
+pruebas automatizadas. No se configura ni valida un router real.
+
+## Ampliación posterior: GNS3 y revisión de formularios
+
+Se preparó un [laboratorio CHR real en GNS3](gns3-mikrotik.md) y pasaron siete
+comprobaciones funcionales de VLAN/DHCP/ping por consola. Se repitieron después
+de reiniciar para comprobar persistencia. No son acciones autónomas de Fosfeno
+en WinBox/WebFig. El controlador incorpora revisión antes de confirmar y bloqueo
+de envíos idénticos rechazados; pasan 140 pruebas del programa y una regresión
+Nemotron separada de tres casos conocidos. El revisor logró 8/12 decisiones
+exactas en su tercera ronda, con cuatro aclaraciones innecesarias. El documento
+enlazado conserva el historial de desarrollo y distingue todas estas mediciones.

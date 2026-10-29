@@ -1,8 +1,11 @@
 import base64
 import ctypes
+import hashlib
 import io
 import json
 import os
+from pathlib import Path
+from urllib.parse import unquote, urlsplit
 import re
 import sys
 import time
@@ -27,6 +30,7 @@ TIPOS = {
     "MenuItemControl",
     "TabItemControl",
     "EditControl",
+    "DocumentControl",
     "CheckBoxControl",
     "ComboBoxControl",
     "HyperlinkControl",
@@ -35,6 +39,7 @@ TIPOS = {
     "RadioButtonControl",
     "SplitButtonControl",
     "SpinnerControl",
+    "DataItemControl",
 }
 RAW_MAX = 600
 MAX_ELEMENTOS = 150
@@ -58,6 +63,104 @@ ESTADO_UI = {}
 TEXTO_UI = []
 DETALLES_UI = {}
 PETICIONES = []
+
+
+def carpeta_explorador(hwnd):
+    """Ubicación local de la ventana de Explorer observada, mediante consulta de solo lectura."""
+    try:
+        import comtypes.client
+        shell = comtypes.client.CreateObject('Shell.Application', dynamic=True)
+        ventanas = shell.Windows()
+        rutas = set()
+        for n in range(ventanas.Count):
+            ventana = ventanas.Item(n)
+            if int(ventana.HWND) != hwnd:
+                continue
+            url = urlsplit(str(ventana.LocationURL))
+            if url.scheme == 'file' and not url.netloc:
+                ruta = unquote(url.path).lstrip('/').replace('/', '\\')
+                if re.match(r'^[A-Za-z]:\\', ruta) and Path(ruta).is_dir():
+                    rutas.add(ruta)
+        return next(iter(rutas)) if len(rutas) == 1 else ''
+    except Exception:
+        return ''
+
+
+def evidencia_archivos(objetivo):
+    """Lectura acotada de rutas de salida explícitas del pedido, nunca inferidas de la pantalla."""
+    if not re.search(r'\b(guarda|guardar|crea|crear|exporta|exportar|escribe|escribir)\b', agente.normalizar(objetivo)):
+        return []
+    patron = r'\b[A-Za-z]:\\[^<>"|\r\n«»]+?\.(?:txt|md|csv|json|docx|xlsx|pptx|pdf|png|jpe?g)(?=$|[\s.,;!?»"`])'
+    rutas = list(dict.fromkeys(re.findall(patron, objetivo, re.I)))[:3]
+    resultados = []
+    for nombre in rutas:
+        ruta = Path(nombre)
+        dato = {'ruta': nombre}
+        try:
+            dato['existe'] = ruta.is_file()
+            if dato['existe']:
+                stat = ruta.stat()
+                dato.update(bytes=stat.st_size, modificado_ns=stat.st_mtime_ns)
+                if ruta.suffix.lower() in ('.txt', '.md', '.csv', '.json') and stat.st_size <= 256_000:
+                    contenido = ruta.read_bytes()
+                    codificacion = 'utf-16' if contenido.startswith((b'\xff\xfe', b'\xfe\xff')) else 'utf-8-sig'
+                    try:
+                        texto = contenido.decode(codificacion)
+                        dato.update(texto=texto[:6000], truncado=len(texto) > 6000)
+                    except UnicodeError:
+                        dato['texto_no_disponible'] = 'Codificación no reconocida; no se infiere el contenido'
+                elif ruta.suffix.lower() == '.docx':
+                    try:
+                        from evidencia_documentos import resumen_docx
+                        documento = resumen_docx(ruta)
+                        for p in documento['parrafos']:
+                            if (len(p['texto']) > 500 or len(p['fragmentos']) > 4
+                                    or any(len(r['texto']) > 120 for r in p['fragmentos'][:4])):
+                                documento['parrafos_truncados'] = True
+                            p['texto'] = p['texto'][:500]
+                            p['fragmentos'] = [{**r, 'texto': r['texto'][:120]} for r in p['fragmentos'][:4]]
+                        while documento['parrafos'] and len(json.dumps(documento, ensure_ascii=False)) > 5000:
+                            documento['parrafos'].pop()
+                            documento['parrafos_truncados'] = True
+                        dato['documento'] = documento
+                    except Exception as exc:
+                        dato['documento_no_disponible'] = type(exc).__name__
+        except OSError as exc:
+            dato['error'] = type(exc).__name__
+        resultados.append(dato)
+    return resultados
+
+
+def evidencia_copias(objetivo, traza):
+    if not re.search(r'\b(copia|copiar)\b', agente.normalizar(objetivo)):
+        return []
+    copia, pegado = None, None
+    for paso in traza:
+        evento = paso.get('evento', {})
+        if evento.get('operacion') == 'copiar':
+            copia, pegado = evento, None
+        elif evento.get('operacion') == 'pegar' and copia:
+            pegado = evento
+    if not copia or not pegado or not copia.get('carpeta_visible') or not pegado.get('carpeta_visible'):
+        return []
+    resultados = []
+    for nombre in copia.get('seleccion_antes', [])[:10]:
+        if Path(nombre).name != nombre or nombre.casefold() not in objetivo.casefold():
+            continue
+        origen, destino = Path(copia['carpeta_visible']) / nombre, Path(pegado['carpeta_visible']) / nombre
+        dato = {'nombre': nombre, 'origen': str(origen), 'destino': str(destino)}
+        try:
+            dato.update(origen_existe=origen.is_file(), destino_existe=destino.is_file(),
+                        ubicaciones_distintas=origen.resolve() != destino.resolve())
+            if dato['origen_existe'] and dato['destino_existe']:
+                a, b = origen.stat().st_size, destino.stat().st_size
+                dato.update(bytes_origen=a, bytes_destino=b)
+                if a <= 16_000_000 and b <= 16_000_000:
+                    dato['contenido_identico'] = hashlib.sha256(origen.read_bytes()).digest() == hashlib.sha256(destino.read_bytes()).digest()
+        except OSError as exc:
+            dato['error'] = type(exc).__name__
+        resultados.append(dato)
+    return resultados
 
 
 def monitor_activo(sct):
@@ -136,6 +239,33 @@ def cargar_notas(titulo):
         return ""
 
 
+def ayuda_aplicacion(estado):
+    # Clase real de la ventana; no activar un perfil solo por un título que
+    # pueda contener el nombre de otra aplicación.
+    if estado.get('clase_aplicacion', estado.get('clase_ventana')) != 'OpusApp':
+        return ''
+    try:
+        return (Path(BASE) / 'ayudas_aplicacion' / 'word.md').read_text(encoding='utf-8')[:2400]
+    except OSError:
+        return ''
+
+
+def contexto_aplicacion(hwnd, clase, titulo):
+    if not hwnd or not clase:
+        return clase, titulo
+    try:
+        funcion = ctypes.windll.user32.GetAncestor
+        funcion.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        funcion.restype = ctypes.c_void_p
+        propietario = int(funcion(hwnd, 3) or 0)
+        if propietario and propietario != hwnd:
+            control = auto.ControlFromHandle(propietario)
+            return control.ClassName or clase, control.Name or titulo
+    except Exception:
+        pass
+    return clase, titulo
+
+
 def raiz_barra_tareas():
     candidatas = []
     for clase in ("Shell_TrayWnd", "Shell_SecondaryTrayWnd"):
@@ -156,12 +286,35 @@ def raiz_barra_tareas():
     return candidatas[0] if candidatas else None
 
 
+def detalles_celda(ctrl):
+    """Relación observada de celda y tabla, sin inferir columnas por posición visual."""
+    dato = {}
+    try:
+        patron = ctrl.GetGridItemPattern()
+        if patron is not None:
+            dato.update(fila=int(patron.Row), columna=int(patron.Column))
+            tabla = patron.ContainingGrid
+            if tabla is not None:
+                dato['tabla'] = str(tabla.Name or '')[:100]
+    except Exception:
+        pass
+    try:
+        patron = ctrl.GetTableItemPattern()
+        if patron is not None:
+            dato['encabezado_columna'] = ' | '.join(str(c.Name or '') for c in patron.GetColumnHeaderItems()[:3])[:100]
+    except Exception:
+        pass
+    return dato
+
+
 def recorrer(raiz, ancho, alto, prefijo, tope):
     crudos = []
     vistos = set()
+    tiempo_agotado = False
     limite = time.time() + TIEMPO_RECORRIDO
     for ctrl, _ in auto.WalkControl(raiz, includeTop=False, maxDepth=PROFUNDIDAD):
         if time.time() > limite:
+            tiempo_agotado = True
             break
         try:
             if ctrl.ControlTypeName == "TextControl" and not prefijo and not ctrl.IsOffscreen:
@@ -187,12 +340,40 @@ def recorrer(raiz, ancho, alto, prefijo, tope):
             tipo = prefijo + ctrl.ControlTypeName.replace("Control", "")
             elemento = (tipo, nombre, r.left, r.top, r.right, r.bottom)
             detalles = {}
+            if ctrl.ControlTypeName == 'DataItemControl':
+                detalles.update(detalles_celda(ctrl))
+            try:
+                if ctrl.AutomationId:
+                    detalles['id_automatizacion'] = str(ctrl.AutomationId)[:100]
+                padre = ctrl.GetParentControl()
+                if padre:
+                    detalles['contenedor'] = (padre.ControlTypeName.replace('Control', '') + ': ' + (padre.Name or ''))[:100]
+                    if padre.ControlTypeName == 'ToolBarControl':
+                        ubicacion = re.fullmatch(r'(?:Dirección|Direccion|Address): ([A-Za-z]:\\.+)', padre.Name or '', re.I)
+                        if ubicacion and len(ubicacion[1]) <= 512:
+                            detalles['carpeta_visible'] = ubicacion[1]
+            except Exception:
+                pass
+            try:
+                if ctrl.AcceleratorKey:
+                    detalles['atajo'] = str(ctrl.AcceleratorKey)[:80]
+            except Exception:
+                pass
             if agente.es_editable(tipo) and not ctrl.IsPassword:
                 try:
-                    detalles["valor"] = str(ctrl.GetValuePattern().Value or "")[:500]
+                    patron = ctrl.GetValuePattern()
+                    valor = str(patron.Value or '')
+                    detalles["valor"] = valor[:1600]
+                    detalles['valor_truncado'] = len(valor) > 1600
+                    detalles['solo_lectura'] = bool(patron.IsReadOnly)
                 except Exception:
-                    pass
-            if ctrl.ControlTypeName in ("CheckBoxControl", "RadioButtonControl"):
+                    try:
+                        valor = ctrl.GetTextPattern().DocumentRange.GetText(1601)
+                        detalles['valor'] = valor[:1600]
+                        detalles['valor_truncado'] = len(valor) > 1600
+                    except Exception:
+                        pass
+            if ctrl.ControlTypeName in ("CheckBoxControl", "RadioButtonControl", "ButtonControl", "SplitButtonControl"):
                 try:
                     detalles["activado"] = int(ctrl.GetTogglePattern().ToggleState) == 1
                 except Exception:
@@ -218,16 +399,11 @@ def recorrer(raiz, ancho, alto, prefijo, tope):
         if len(crudos) >= RAW_MAX:
             break
     crudos.sort(key=lambda e: (e[3] // 25, e[2]))
-    cuenta = {}
-    elementos = []
-    for e in crudos:
-        if e[1]:
-            k = (e[0], e[1])
-            cuenta[k] = cuenta.get(k, 0) + 1
-            if cuenta[k] > MAX_REPETIDOS:
-                continue
-        elementos.append(e)
-    truncado = len(elementos) > tope or len(crudos) >= RAW_MAX
+    # Un diálogo puede tener dos botones desplegables "Abrir" y un tercer
+    # botón "Abrir" que confirma la operación. El nombre no identifica al
+    # control: conservar destinos distintos, ya deduplicados por rectángulo.
+    elementos = crudos
+    truncado = tiempo_agotado or len(elementos) > tope or len(crudos) >= RAW_MAX
     return elementos[:tope], truncado
 
 
@@ -242,13 +418,13 @@ def es_app_activa(nombre, titulo):
     return t == app or t.endswith(" - " + app) or t.startswith(app + " - ")
 
 
-def reunir(ancho, alto):
+def reunir(ancho, alto, incluir_barra=True):
     TEXTO_UI.clear()
     DETALLES_UI.clear()
     top = auto.GetForegroundControl()
     titulo = top.Name or ""
     elementos, truncado = recorrer(top, ancho, alto, "", MAX_ELEMENTOS)
-    if top.ClassName not in ("Shell_TrayWnd", "Shell_SecondaryTrayWnd"):
+    if incluir_barra and top.ClassName not in ("Shell_TrayWnd", "Shell_SecondaryTrayWnd"):
         barra = raiz_barra_tareas()
         if barra is not None:
             extra, _ = recorrer(barra, ancho, alto, "BarraDeTareas:", MAX_BARRA)
@@ -256,7 +432,29 @@ def reunir(ancho, alto):
             elementos = elementos + extra
     ESTADO_UI.clear()
     ESTADO_UI.update(capturar_estado(titulo, elementos, top))
+    ESTADO_UI['captura_incompleta'] = truncado
     return titulo, elementos, truncado
+
+
+def identificar_foco(elementos, nombre, rol, rect, editable):
+    """Resuelve el campo dentro de un contenedor enfocado sin adivinar entre hermanos."""
+    if editable and rol == 'Document' and rect[2] > rect[0] and rect[3] > rect[1]:
+        campos = [n for n, e in enumerate(elementos, 1) if agente.es_editable(e[0])
+                  and e[0].split(':')[-1] != 'Document'
+                  and rect[0] <= e[2] < e[4] <= rect[2] and rect[1] <= e[3] < e[5] <= rect[3]
+                  and not e[0].startswith('BarraDeTareas:')]
+        if len(campos) == 1:
+            return campos[0], 'contenido_editable_unico'
+    exactos = [n for n, e in enumerate(elementos, 1) if tuple(e[2:]) == rect]
+    compatibles = [n for n in exactos if elementos[n - 1][0].split(':')[-1] == rol]
+    if len(compatibles) == 1:
+        return compatibles[0], 'rectangulo_y_rol'
+    if len(exactos) == 1 and (not editable or agente.es_editable(elementos[exactos[0] - 1][0])):
+        return exactos[0], 'rectangulo'
+    nombres = [n for n, e in enumerate(elementos, 1) if e[1] == nombre and e[0].split(':')[-1] == rol]
+    if nombre and len(nombres) == 1:
+        return nombres[0], 'nombre_y_rol'
+    return None, 'sin_coincidencia'
 
 
 def capturar_estado(titulo, elementos, ventana=None):
@@ -269,20 +467,42 @@ def capturar_estado(titulo, elementos, ventana=None):
             foco["editable"] = agente.es_editable(foco["rol"])
             r = ctrl.BoundingRectangle
             rect = (r.left, r.top, r.right, r.bottom)
-            exactos = [n for n, e in enumerate(elementos, 1) if tuple(e[2:]) == rect]
-            nombres = [n for n, e in enumerate(elementos, 1) if e[1] == foco["nombre"] and e[0].endswith(foco["rol"])]
-            foco["n"] = exactos[0] if exactos else (nombres[0] if len(nombres) == 1 else None)
+            foco['rect'] = rect
             if not foco["secreto"]:
                 try:
                     patron = ctrl.GetValuePattern()
-                    foco["valor"] = str(patron.Value or "")[:1600]
-                    foco["editable"] = not patron.IsReadOnly
+                    valor = str(patron.Value or '')
+                    foco["valor"] = valor[:1600]
+                    foco['valor_truncado'] = len(valor) > 1600
+                    foco["editable"] = agente.es_editable(foco['rol']) and not patron.IsReadOnly
                 except Exception:
                     if foco["editable"]:
                         try:
-                            foco["valor"] = ctrl.GetTextPattern().DocumentRange.GetText(1600)
+                            valor = ctrl.GetTextPattern().DocumentRange.GetText(1601)
+                            foco["valor"] = valor[:1600]
+                            foco['valor_truncado'] = len(valor) > 1600
                         except Exception:
                             pass
+                try:
+                    patron_texto = ctrl.GetTextPattern()
+                    rangos = patron_texto.GetSelection()
+                    foco['seleccion'] = '\n'.join(r.GetText(600) for r in rangos[:3])
+                    if rangos:
+                        previo = patron_texto.DocumentRange.Clone()
+                        previo.MoveEndpointByRange(auto.TextPatternRangeEndpoint.End, rangos[0], auto.TextPatternRangeEndpoint.Start, waitTime=0)
+                        antes = previo.GetText(6001)
+                        if len(antes) <= 6000:
+                            foco['cursor_parrafo'] = agente.normalizar(antes).count('\n') + 1
+                            foco['texto_antes_cursor'] = antes[-240:]
+                    if foco['rol'] == 'Document':
+                        formato = {}
+                        for etiqueta, atributo in [('peso_fuente', auto.TextAttributeId.FontWeightAttribute), ('alineacion', auto.TextAttributeId.HorizontalTextAlignmentAttribute)]:
+                            valor = patron_texto.DocumentRange.GetAttributeValue(atributo)
+                            formato[etiqueta] = valor if isinstance(valor, (str, int, float, bool)) else 'mixto_o_no_disponible'
+                        foco['formato_documento'] = formato
+                except Exception:
+                    pass
+            foco['n'], foco['coincidencia'] = identificar_foco(elementos, foco['nombre'], foco['rol'], rect, foco['editable'])
     except Exception:
         pass
     hwnd = 0
@@ -290,9 +510,27 @@ def capturar_estado(titulo, elementos, ventana=None):
         hwnd = int((ventana or auto.GetForegroundControl()).NativeWindowHandle)
     except Exception:
         pass
-    return {"ventana": titulo, "hwnd": hwnd, "foco": foco,
+    clase = ''
+    try:
+        clase = (ventana or auto.GetForegroundControl()).ClassName
+    except Exception:
+        pass
+    carpetas = {d['carpeta_visible'] for d in DETALLES_UI.values() if d.get('carpeta_visible')}
+    carpeta = next(iter(carpetas)) if len(carpetas) == 1 and clase in ('CabinetWClass', 'ExploreWClass') else ''
+    if not carpeta and clase in ('CabinetWClass', 'ExploreWClass'):
+        carpeta = carpeta_explorador(hwnd)
+    clase_app, titulo_app = contexto_aplicacion(hwnd, clase, titulo)
+    return {"ventana": titulo, "hwnd": hwnd, "foco": foco, 'clase_ventana': clase,
+            'clase_aplicacion': clase_app, 'ventana_aplicacion': titulo_app,
+            'carpeta_visible': carpeta,
             "texto_visible": "\n".join(dict.fromkeys(TEXTO_UI))[:5000],
             "detalles": {str(n): DETALLES_UI[e] for n, e in enumerate(elementos, 1) if e in DETALLES_UI}}
+
+
+def formulario_sin_cambios(firma, ancho, alto):
+    """Recaptura valores UIA; capturar_estado solo refresca el foco y usa la lista previa."""
+    _, elementos, truncado = reunir(ancho, alto)
+    return not truncado and agente.precondiciones.firma_formulario(elementos, ESTADO_UI) == firma
 
 
 def validar_destino(elemento, hwnd=None):
@@ -509,7 +747,7 @@ def gramatica_accion(total):
 
 
 def decidir_accion(objetivo, img, titulo, elementos, historial, ejemplos="", partes=None,
-                   estado=None, traza=None, feedback=""):
+                   estado=None, traza=None, feedback="", tarea=None):
     ancho, alto = img.size
     marcada = marcar(img, elementos)
     lista = construir_lista(elementos, ancho, alto)
@@ -517,8 +755,15 @@ def decidir_accion(objetivo, img, titulo, elementos, historial, ejemplos="", par
         inicio = time.monotonic()
         actual = dict(ESTADO_UI if estado is None else estado)
         actual["ventana"] = titulo
+        if 'archivos_observados' not in actual:
+            actual['archivos_observados'] = evidencia_archivos(objetivo)
+        if 'copias_observadas' not in actual:
+            actual['copias_observadas'] = evidencia_copias(objetivo, traza or [])
         accion, dato, intentos = agente.proponer(objetivo, elementos, actual, historial,
-            preguntar_json, acciones.normalizar_tecla, img, traza, feedback)
+            preguntar_json, acciones.normalizar_tecla, img, traza, feedback,
+            referencias={"notas": cargar_notas(actual.get('ventana_aplicacion') or titulo)[:6000], "recetas": ejemplos[:4000],
+                         'ayuda_aplicacion': ayuda_aplicacion(actual)},
+            partes=partes, tarea=tarea)
         dato["intentos"] = intentos
         return accion, json.dumps(dato, ensure_ascii=False), lista, marcada, time.monotonic() - inicio
     notas = cargar_notas(titulo)

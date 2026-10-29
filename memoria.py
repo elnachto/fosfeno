@@ -3,6 +3,7 @@ import os
 import re
 import time
 import unicodedata
+import parametros
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 CONOCIMIENTO = os.path.join(BASE, "conocimiento")
@@ -138,6 +139,10 @@ def guardar_mapa(app, mapa):
 def guardar_receta(app, objetivo, pasos, fuente, crudos=None):
     os.makedirs(CONOCIMIENTO, exist_ok=True)
     dato = {"app": app, "objetivo": objetivo.strip(), "pasos": list(pasos), "fuente": fuente, "fecha": time.strftime("%Y-%m-%d %H:%M")}
+    if fuente in ('demostracion', 'exito'):
+        plantilla = parametros.crear_plantilla(objetivo, pasos)
+        if plantilla:
+            dato['plantilla'] = plantilla
     if crudos is not None and list(crudos) != list(pasos):
         dato["crudos"] = list(crudos)
     with open(RECETAS, "a", encoding="utf-8") as f:
@@ -167,6 +172,11 @@ def buscar_recetas(objetivo, app, n=3):
     puntuadas = []
     vistos = set()
     for r in reversed(leer_recetas()):
+        r = dict(r)
+        if r.get('fuente') in ('demostracion', 'exito') and not r.get('plantilla'):
+            plantilla = parametros.crear_plantilla(r.get('objetivo', ''), r.get('pasos', []))
+            if plantilla:
+                r['plantilla'] = plantilla
         clave = (r.get("app"), normalizar(r.get("objetivo", "")))
         if clave in vistos:
             continue
@@ -188,13 +198,21 @@ def buscar_recetas(objetivo, app, n=3):
     return [r for _, r in puntuadas[:n]]
 
 
-def texto_recetas(recetas):
+def texto_recetas(recetas, objetivo=None):
     bloques = []
     for r in recetas:
+        r = dict(r)
+        plantilla = r.get('plantilla')
+        if plantilla:
+            preparada = parametros.instanciar(plantilla, objetivo) if objetivo else {'lista': False, 'pregunta': 'Requiere parámetros actuales del usuario.'}
+            if not preparada['lista']:
+                bloques.append('- Procedimiento parametrizado: ' + plantilla['objetivo'] + '. PREGUNTAR antes de actuar: ' + preparada['pregunta'])
+                continue
+            r.update(objetivo=preparada['objetivo'], pasos=preparada['pasos'])
         origen = "te lo enseñó el usuario" if r.get("fuente") == "demostracion" else "lo hiciste bien antes"
         pasos = "; ".join(str(i) + ") " + p for i, p in enumerate(r.get("pasos", []), start=1))
         bloques.append("- «" + r.get("objetivo", "") + "» en " + (r.get("app") or "?") + " (" + origen + "): " + pasos)
-    return "\n".join(bloques)
+    return "\n".join(bloques)[:4000]
 
 
 DISPARO_DEMO = re.compile(

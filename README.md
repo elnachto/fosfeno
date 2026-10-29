@@ -14,7 +14,14 @@ La idea nace de la fantasía del asistente tipo **Jarvis** (un compañero que ve
 - **Guía:** "¿cómo abro una pestaña nueva?" te señala el botón con una animación y te ofrece hacerlo por ti.
 - **Hazlo:** "abre WhatsApp y dile hola a Mamá" hace clic, escribe y pulsa teclas, paso a paso, con cuenta atrás y cancelación con `Esc`.
 - **Aprende por demostración:** "mírame cómo se crea un usuario" observa lo que haces, limpia los errores y guarda una receta.
+- **Encadena tareas (experimental):** conserva datos breves al cambiar de ventana,
+  verifica subtareas y guarda un resumen final con lo comprobado y pendiente.
+  Las recetas pueden reutilizar MAC, IPv4 y VLAN como parámetros. Ver
+  [alcance y ejemplos](docs/tareas-y-parametros.md).
 - **Explora una app:** "explora esta app" describe los controles visibles y guarda un mapa de esa ventana. Ver las limitaciones actuales más abajo.
+- **Revisa antes de confirmar (experimental):** contrasta formularios con el pedido
+  y bloquea algunos reintentos sin corregir tras un rechazo. El revisor aún pide
+  aclaraciones innecesarias en ciertos escenarios. Ver [pruebas y límites](docs/gns3-mikrotik.md).
 - **Se corrige con la voz:** "no, era el botón de arriba" o "recuerda que aquí se guarda con Ctrl+S".
 - **Se marea** si das muchas vueltas con el mouse.
 - **Conversa:** responde con expresiones a "gracias", "hola", "buen trabajo", "¿cómo estás?" y similares, sin tocar nada.
@@ -148,23 +155,47 @@ Resultados de la instalación local, revisados el 28 de octubre de 2026:
 | Ocho tareas simuladas, dos semillas por tarea | 16/16 completas y verificadas | 2/16 completas y verificadas |
 | Una tarea por aplicación en Word, Explorador y Bloc de notas | 0/3 completas | No evaluado en esta ronda |
 
-La ronda real usó decisiones del controlador sobre controles de Windows y
+La primera ronda real usó decisiones del controlador sobre controles de Windows y
 un adaptador para ejecutar las entradas, con observación entre pasos. Se
 detuvo ante ciclos sin progreso, sin agotar su presupuesto de acciones. No
 incluyó voz ni el recorrido completo de los atajos e inyección nativa.
 Son muestras pequeñas; el resultado simulado no estima la fiabilidad general.
 
-- Word puede informar el foco como documento y el destino como campo editable;
-  el controlador insiste en enfocarlo y no llega a escribir.
-- En el Explorador aparecieron ciclos al intentar seleccionar varios archivos.
-  En Bloc de notas se hizo un reemplazo parcial, pero no se completó ni guardó
-  el pedido. La detección de ciclos de varios pasos sigue pendiente.
-- Las demostraciones y mapas se guardan. La rama del controlador con estado
-  todavía no incorpora las notas y recetas al decidir acciones, aunque la
-  consola pueda mostrar recetas encontradas. Las preguntas sí pueden usar notas.
+- En esa versión, Word se bloqueaba al identificar el foco, el Explorador
+  repetía selecciones y Bloc de notas no completaba ni guardaba el pedido.
+  La ronda del 29 de octubre corrigió captura del editor y foco, selección
+  localizada, ciclos y comprobación de archivos; los resultados históricos
+  de la tabla se conservan.
+- Las demostraciones y mapas se guardan. El controlador con estado ahora recibe
+  notas, recetas y partes del pedido como referencia; se corrigió la desconexión
+  que hacía que la consola anunciara recetas que no llegaban al modelo.
+  Los resultados anteriores no se repitieron después de este cambio.
 - Explorar describe una captura; no recorre toda la aplicación ni valida sus
-  procedimientos. Investigar manuales y enseñar aplicaciones por etapas es una
-  ampliación propuesta, todavía sin implementar.
+  procedimientos. Hay un [tutor experimental con manuales locales](docs/tutor-experimental.md)
+  separado del flujo de voz. En Packet Tracer se comprobó una corrección concreta,
+  pero también hubo errores de explicación, citas y restricciones. Aún no ofrece
+  exploración autónoma ni enseñanza fiable para cualquier aplicación.
+
+En la [ronda de escritorio del 29 de octubre](docs/pruebas-escritorio-2026-10-29.md),
+una regresión nueva del Explorador terminó en seis acciones con dos copias
+idénticas, originales conservados y final aceptado. Otra copió bien, pero el
+verificador rechazó el final. Bloc de notas modificó y guardó el inventario;
+las notas nuevas conservaron sangría, Unicode y salto final, aunque reconocer
+el final necesitó otra corrección. Word logró guardar, pero el formato complejo
+sigue incompleto. Los casos de desarrollo tuvieron correcciones e intervenciones;
+no forman un porcentaje general de éxito. En esa ronda pasaron 87 pruebas
+automatizadas del programa. La ampliación posterior de
+[tareas y parámetros](docs/tareas-y-parametros.md) incorpora memoria breve,
+subtareas verificadas y respuesta persistente; el recorrido nativo completo de
+voz y entradas sigue sin evaluarse.
+
+En la [interfaz ficticia de MikroTik](docs/mikrotik-simulado.md) se comprobó que
+adapta una receta a valores y controles distintos, incluso eligiendo el servidor
+correcto en segundo lugar. Sin embargo, no anticipó una IP ocupada: la rechazó
+el simulador, después el modelo explicó el error y propuso un reintento inútil.
+El ensayo no valida RouterOS real ni demuestra mejora causal del aprendizaje;
+la condición sin receta también funcionó. Pasan 128 pruebas automatizadas del
+programa y del simulador.
 
 ## Uso
 
@@ -210,6 +241,8 @@ Cosas para probar:
 - Lo que aprende se guarda en `conocimiento/` (recetas y notas por app) y puede incluir texto que escribas o nombres que vea. **Está excluido de git** salvo la nota de ejemplo de Visual Studio Code. Revísalo antes de compartirlo.
 - "Mírame" no guarda el contenido de campos de contraseña.
 - `salidas/` guarda capturas y registros de cada paso para depurar; también está excluida.
+  `salidas/tareas/` contiene los resultados JSON/Markdown y los datos conservados
+  durante cada tarea; no se vuelven a cargar automáticamente en otras tareas.
 
 ## Estructura
 
@@ -219,6 +252,9 @@ Cosas para probar:
 | `marcas.py` | Lee la pantalla, arma la lista numerada y habla con el modelo |
 | `motor_ia.py` | Perfiles de Nemotron y LFM3: servidor y parámetros de generación |
 | `agente.py` | Estado, validación de acciones, continuidad de escritura y verificación del objetivo |
+| `tareas.py` | Subtareas, memoria breve con procedencia y respuesta final persistente |
+| `parametros.py` | Validación de MAC/IPv4/VLAN y plantillas de recetas con valores actuales |
+| `precondiciones.py` | Revisión de formularios, firma de valores y bloqueo de reintentos rechazados |
 | `servidores_lfm3.py` | Arranque y comprobación de los servidores de los tres modos |
 | `evaluacion.py` | Comparación reproducible en ocho tareas simuladas |
 | `overlay.py` | La bolita, las expresiones y el efecto gooey |
