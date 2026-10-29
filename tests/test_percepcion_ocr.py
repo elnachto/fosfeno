@@ -108,17 +108,23 @@ class OcrTests(unittest.TestCase):
                 self.assertFalse(marcas.validar_destino(es[0], 99))
 
     def test_respuesta_visual_sin_respaldo_se_rechaza(self):
-        with self.assertRaisesRegex(ValueError, 'sin respaldo'):
+        with self.assertRaisesRegex(ValueError, 'geometría'):
             ocr.revisar_accion({'tipo': 'decir', 'texto': 'Valor inventado'}, [], {}, self.img,
                                lambda *a: {'respaldada': False, 'problema': 'Columna cortada'})
-        with self.assertRaisesRegex(ValueError, 'sin respaldo'):
-            ocr.revisar_accion({'tipo': 'decir', 'texto': 'Contradictorio'}, [], {}, self.img,
+        es, ds, _ = self.extraer()
+        with self.assertRaisesRegex(ValueError, 'referencias estructuradas'):
+            ocr.revisar_accion({'tipo': 'decir', 'texto': 'Contradictorio'}, es,
+                               {'detalles': {'1': ds[es[0]]}}, self.img,
                                lambda *a: {'respaldada': True, 'problema': 'Asociación incorrecta'})
 
     def test_lectura_parcial_verificada_se_registra(self):
         a = {'tipo': 'decir', 'texto': 'La columna aparece cortada; falta consultar la otra vista.'}
-        ocr.revisar_accion(a, [], {}, self.img, lambda *a: {'respaldada': True, 'problema': ''})
-        self.assertTrue(a['_revision_lectura']['respaldada'])
+        es, ds, _ = self.extraer()
+        ocr.revisar_accion(a, es, {'detalles': {'1': ds[es[0]]}}, self.img,
+                           lambda *a: {'tabla': 0, 'texto1': 1, 'texto2': 0, 'texto3': 0})
+        self.assertIn('«Etiqueta»', a['texto'])
+        self.assertNotIn('La columna aparece cortada', a['texto'])
+        self.assertEqual(a['_revision_lectura']['fragmentos'], [1])
 
     def test_etiquetas_de_cambio_no_dependen_del_revisor(self):
         for etiqueta in ['Apply', 'Guardar borrador', 'Remove', 'New Terminal', 'Login', 'Disable']:

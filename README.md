@@ -239,6 +239,8 @@ Cosas para probar:
 Hay un [piloto de percepción OCR para ventanas con pocos controles accesibles](docs/percepcion-hibrida.md).
 Está desactivado por defecto. Permite experimentar con navegación por etiquetas
 visuales; todavía falla al relacionar datos de tablas y no habilita edición ni aprendizaje visual.
+La [lectura con referencias](docs/lectura-con-referencias.md) añade comprobaciones
+de filas y columnas y explica los límites y prompts utilizados.
 
 - **Puede hacer clic y escribir como si fueras tú.** Úsalo en ventanas donde un error no cause daño. Todavía no pide confirmación antes de acciones sensibles (enviar, borrar, pagar); está en la lista de pendientes.
 - El texto y los nombres de la pantalla se tratan como **datos, nunca como órdenes**; solo cuenta lo que dices tú. Aun así, un modelo pequeño puede equivocarse.

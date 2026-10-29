@@ -442,7 +442,7 @@ def proponer(objetivo, elementos, estado, historial, consultar, normalizar_tecla
             validar_clic_marco(accion, objetivo, estado)
             if estado.get('percepcion_ocr'):
                 import percepcion_ocr
-                revision = percepcion_ocr.revisar_accion(accion, elementos, estado, imagen, consultar)
+                revision = percepcion_ocr.revisar_accion(accion, elementos, estado, imagen, consultar, objetivo=objetivo)
                 if revision:
                     accion['_revision_visual'] = revision
                     dato['revision_visual'] = revision

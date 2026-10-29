@@ -29,7 +29,7 @@ import tareas
 import uiautomation as auto
 
 CODIGO_AUDITADO = ('agente.py', 'marcas.py', 'jarvis.py', 'motor_ia.py',
-                   'percepcion_visual.py', 'percepcion_ocr.py', 'percepcion_win32.py')
+                   'percepcion_visual.py', 'percepcion_ocr.py', 'percepcion_win32.py', 'lectura_visual.py')
 
 
 def main():
@@ -114,7 +114,7 @@ def main():
                 if ruta == '/caso':
                     importlib.reload(agente)
                     importlib.reload(marcas)
-                    for modulo in ('percepcion_visual', 'percepcion_ocr'):
+                    for modulo in ('percepcion_visual', 'percepcion_ocr', 'lectura_visual'):
                         if modulo in sys.modules:
                             importlib.reload(sys.modules[modulo])
                     marcas.PERFIL = dict(marcas.PERFIL, semilla=42, cache_prompt=False)

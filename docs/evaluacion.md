@@ -192,3 +192,9 @@ revisor también aceptó hechos incorrectos. Se deshabilitó aprendizaje en ese 
 Sobre una captura fija conocida, OCR localizó tres etiquetas; la rejilla inicial
 eligió tres celdas erróneas y se abstuvo después. No es un benchmark ciego.
 La regresión separada de nota/contacto/selector volvió a pasar 3/3 con semilla 42.
+
+Una [segunda ronda de lectura con referencias](lectura-con-referencias.md) pasó
+179 pruebas del programa y otra regresión 3/3. Sobre capturas fijas, el lector
+leyó la pareja DHCP/interfaz y dos tablas sintéticas con valores nuevos. Conserva
+fallos previos de selección, duplicación y salida agotada. No prueba nuevas apps
+reales ni completa la operación de IPv4/reservas en WinBox.
