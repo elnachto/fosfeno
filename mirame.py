@@ -67,8 +67,9 @@ def corto(texto, n=60):
 
 
 class Demostracion:
-    def __init__(self):
+    def __init__(self, permitir_inyectados=False):
         self.pasos = []
+        self.permitir_inyectados = permitir_inyectados
         self.app_titulo = ""
         self.eventos = queue.Queue()
         self.hilo_ganchos = None
@@ -103,14 +104,14 @@ class Demostracion:
         def raton(codigo, wparam, lparam):
             if codigo == 0 and wparam in (WM_LBUTTONDOWN, WM_RBUTTONDOWN):
                 d = ctypes.cast(lparam, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
-                if not d.flags & LLMHF_INJECTED:
+                if self.permitir_inyectados or not d.flags & LLMHF_INJECTED:
                     self.eventos.put(("clic", d.pt.x, d.pt.y, wparam == WM_RBUTTONDOWN))
             return user32.CallNextHookEx(None, codigo, wparam, lparam)
 
         def teclado(codigo, wparam, lparam):
             if codigo == 0 and wparam in (WM_KEYDOWN, WM_SYSKEYDOWN):
                 d = ctypes.cast(lparam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
-                if not d.flags & LLKHF_INJECTED:
+                if self.permitir_inyectados or not d.flags & LLKHF_INJECTED:
                     self.eventos.put(("tecla", int(d.vkCode), pulsada(0x11), pulsada(0x12)))
             return user32.CallNextHookEx(None, codigo, wparam, lparam)
 
