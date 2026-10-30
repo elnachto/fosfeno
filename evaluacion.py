@@ -163,7 +163,7 @@ class AplicacionSimulada:
         return not self.cargando
 
 
-def ejecutar_caso(caso, motor, semilla, max_pasos=14):
+def ejecutar_caso(caso, motor, semilla, max_pasos=14, referencias=None):
     perfil_anterior = marcas.PERFIL
     marcas.PERFIL = copy.deepcopy(motor_ia.PERFILES[motor])
     marcas.PERFIL.update(semilla=semilla, cache_prompt=False)
@@ -181,7 +181,8 @@ def ejecutar_caso(caso, motor, semilla, max_pasos=14):
             pendiente = None
             if accion is None:
                 accion, dato, intentos = agente.proponer(caso["objetivo"], elementos, estado, historial,
-                    marcas.preguntar_json, acciones.normalizar_tecla, traza=traza, feedback=feedback)
+                    marcas.preguntar_json, acciones.normalizar_tecla, traza=traza, feedback=feedback,
+                    referencias=referencias)
             feedback = ""
             registro = {"numero": numero + 1, "accion": accion, "estado": copy.deepcopy(estado)}
             pasos.append(registro)

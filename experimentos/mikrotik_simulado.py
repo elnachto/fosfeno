@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QComboBox, QFormLayou
 
 BASE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE))
-import parametros
+from experimentos import parametros_red as parametros
 
 SERVIDORES = [
     {'nombre': 'dhcp-a', 'vlan': 20, 'red': '192.168.20.0/24'},

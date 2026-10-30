@@ -12,7 +12,7 @@ sys.path.insert(0, str(BASE))
 import acciones
 import agente
 import marcas
-import parametros
+from experimentos import parametros_red as parametros
 import tareas
 
 
@@ -181,7 +181,7 @@ def main():
     args.salida.mkdir(parents=True, exist_ok=True)
     marcas.PERFIL = dict(marcas.motor_ia.PERFILES['nemotron'], semilla=42, cache_prompt=False)
     resultados = []
-    fuentes = ['agente.py', 'tareas.py', 'parametros.py', 'memoria.py', 'marcas.py', 'jarvis.py', 'experimentos/evaluar_tareas_variables.py']
+    fuentes = ['agente.py', 'tareas.py', 'experimentos/parametros_red.py', 'memoria.py', 'marcas.py', 'jarvis.py', 'experimentos/evaluar_tareas_variables.py']
     hashes = {n: hashlib.sha256((BASE / n).read_bytes()).hexdigest() for n in fuentes}
     (args.salida / 'condiciones.json').write_text(json.dumps({'codigo_sha256': hashes,
         'semillas': args.semillas, 'casos': args.casos, 'tipo': 'Estados sintéticos, no escritorio ni router'},

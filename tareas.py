@@ -9,7 +9,7 @@ import re
 import time
 import uuid
 
-import parametros
+from precondiciones import normalizar
 
 MAX_ETAPAS = 6
 MAX_HECHOS = 8
@@ -45,7 +45,6 @@ class SesionTarea:
             raise ValueError('La orden debe contener entre 1 y 6000 caracteres; divide los pedidos mayores')
         self.id = time.strftime('%Y%m%d-%H%M%S-') + uuid.uuid4().hex[:8]
         self.objetivo = objetivo
-        self.parametros = parametros.extraer(objetivo)
         originales = partes or [objetivo]
         if len(originales) > MAX_ETAPAS or any(not isinstance(p, str) or not p.strip() or len(p) > 6000 for p in originales):
             raise ValueError('El plan excede el límite de subtareas')
@@ -68,10 +67,10 @@ class SesionTarea:
 
     def lectura_activa(self):
         return bool(re.match(r'^\s*(?:(?:primero|despues|luego|por favor)\s*[:,]?\s*)?(?:lee|leer|extrae|extraer)\b',
-                             parametros.normalizar(self.actual)))
+                             normalizar(self.actual)))
 
     def delega_instrucciones(self):
-        pedido = parametros.normalizar(self.objetivo)
+        pedido = normalizar(self.objetivo)
         refiere = bool(re.search(r'\b(hazlas|ejecutalas|siguelas|aplicalas)\b', pedido)
                        or re.search(r'\b(ejecuta|sigue|aplica|realiza|cumple)\s+(?:las |los |el )?(?:instrucciones|indicaciones|procedimiento|pasos)\b', pedido))
         negado = bool(re.search(r'\b(no|sin)\s+(?:las |los )?(?:ejecut\w*|aplic\w*|seguir|sig\w*|realiz\w*)\b', pedido))
@@ -83,8 +82,8 @@ class SesionTarea:
         """Ingreso determinista opcional de una nota corta; no infiere pasos ni destinos."""
         if not self.delega_instrucciones() or not self.lectura_activa() or self.importado:
             return None
-        pedido = parametros.normalizar(self.objetivo)
-        ventana = parametros.normalizar(str(estado.get('ventana', '')))
+        pedido = normalizar(self.objetivo)
+        ventana = normalizar(str(estado.get('ventana', '')))
         clase = estado.get('clase_aplicacion') or estado.get('clase_ventana')
         fuente_correcta = ((re.search(r'\b(nota|bloc|notepad)\b', pedido)
                            and (clase == 'Notepad' or re.search(r'\b(nota|notas|bloc|notepad)\b', ventana)))
@@ -94,14 +93,14 @@ class SesionTarea:
         if not fuente_correcta or foco.get('secreto') or foco.get('rol') not in ('Document', 'Edit') or foco.get('valor_truncado'):
             return None
         for nombre in re.findall(r'(?:archivo|nota|documento)\s+«([^»]+)»', self.objetivo, re.I):
-            if parametros.normalizar(nombre) not in ventana:
+            if normalizar(nombre) not in ventana:
                 return None
         contenido = literal(foco.get('valor', ''))
         if not contenido or len(contenido) > 1000:
             return None
-        pasos = [p.strip() for p in contenido.splitlines() if p.strip() and parametros.normalizar(p.strip()) != 'instrucciones:']
+        pasos = [p.strip() for p in contenido.splitlines() if p.strip() and normalizar(p.strip()) != 'instrucciones:']
         verbo = r'^(?:[-*•]|\d+[.)])?\s*(escribe|guarda|abre|crea|cambia|selecciona|copia|pega|pulsa|introduce|rellena|activa|desactiva)\b'
-        if not 1 <= len(pasos) <= 4 or not all(len(p) <= 240 and re.match(verbo, parametros.normalizar(p)) for p in pasos):
+        if not 1 <= len(pasos) <= 4 or not all(len(p) <= 240 and re.match(verbo, normalizar(p)) for p in pasos):
             return None
         return pasos
 
@@ -113,11 +112,11 @@ class SesionTarea:
         if accion['tipo'] == 'escribir':
             n = accion.get('n') or (estado.get('foco') or {}).get('n')
             nombre = elementos[n - 1][1] if n and 1 <= n <= len(elementos) else ''
-            if not re.search(r'\b(buscar|busqueda|search|filtrar|filtro)\b', parametros.normalizar(nombre)):
+            if not re.search(r'\b(buscar|busqueda|search|filtrar|filtro)\b', normalizar(nombre)):
                 raise ValueError('La etapa activa es leer: conserva los datos o importa el plan y solicita SIGUIENTE antes de escribir en el destino')
         if accion['tipo'] == 'clic':
-            nombre = parametros.normalizar(elementos[accion['n'] - 1][1])
-            palabras = lambda t: set(re.findall(r'[a-z0-9]{3,}', parametros.normalizar(t)))
+            nombre = normalizar(elementos[accion['n'] - 1][1])
+            palabras = lambda t: set(re.findall(r'[a-z0-9]{3,}', normalizar(t)))
             posteriores = palabras(self.objetivo) - palabras(self.actual) - {
                 'luego', 'despues', 'hazlas', 'ejecutalas', 'instrucciones', 'prueba', 'actual',
                 'abre', 'abrir', 'escribe', 'escribir', 'guarda', 'guardar', 'dime', 'resultado'}
@@ -129,8 +128,6 @@ class SesionTarea:
                 'etapas': [{'n': i + 1, 'objetivo': e['objetivo'][:260], 'estado': e['estado'],
                             **({'evidencia': e['evidencia'][:180]} if e['estado'] == 'comprobada' else {})}
                            for i, e in enumerate(self.etapas)],
-                'parametros_usuario': self.parametros['valores'], 'parametros_ambiguos': self.parametros['ambiguos'],
-                'errores_parametros': self.parametros['errores'],
                 'hechos_observados': self.hechos, 'plan_importado': self.importado,
                 'fuente_plan': self.fuente_plan, 'limite_memoria_hechos': MAX_HECHOS}
         if len(json.dumps(dato, ensure_ascii=False)) > MAX_CONTEXTO:
@@ -204,12 +201,12 @@ class SesionTarea:
         observados = fragmentos_observados(estado)
         if not all(any(literal(p) in t for t in observados) for p in pasos):
             raise ValueError('Los pasos deben aparecer literalmente en la fuente actual')
-        if any(re.search(r'\b(ignora|ignorar|desobedece|system prompt|contraseña|contrasena)\b', parametros.normalizar(p)) for p in pasos):
+        if any(re.search(r'\b(ignora|ignorar|desobedece|system prompt|contraseña|contrasena)\b', normalizar(p)) for p in pasos):
             raise ValueError('La fuente intenta cambiar instrucciones o incluye credenciales; no se importa como plan')
         # Conservar las obligaciones explícitas del usuario posteriores a la lectura.
         restantes = [e for e in self.etapas[self.indice + 1:]
-                     if not re.fullmatch(r'(?:hazlas|ejecutalas|siguelas|aplicalas)[.! ]*', parametros.normalizar(e['objetivo']))
-                     and not re.fullmatch(r'(?:ejecuta|sigue|aplica|realiza|cumple) (?:las |los )?(?:instrucciones|indicaciones|pasos|procedimiento)[.! ]*', parametros.normalizar(e['objetivo']))]
+                     if not re.fullmatch(r'(?:hazlas|ejecutalas|siguelas|aplicalas)[.! ]*', normalizar(e['objetivo']))
+                     and not re.fullmatch(r'(?:ejecuta|sigue|aplica|realiza|cumple) (?:las |los )?(?:instrucciones|indicaciones|pasos|procedimiento)[.! ]*', normalizar(e['objetivo']))]
         primeras = self.etapas[:self.indice + 1]
         if len(self.etapas) == 1:
             primeras = [{'objetivo': 'Lee las instrucciones de la fuente seleccionada', 'estado': 'activa', 'evidencia': ''}]
@@ -254,7 +251,7 @@ class SesionTarea:
 
     def resultado(self):
         return {'id': self.id, 'objetivo': self.objetivo, 'estado': self.estado, 'etapas': self.etapas,
-                'parametros': self.parametros, 'hechos': self.hechos, 'respuestas': self.respuestas,
+                'hechos': self.hechos, 'respuestas': self.respuestas,
                 'motivo': self.motivo, 'plan_importado': self.importado, 'fuente_plan': self.fuente_plan}
 
     def respuesta_final(self):

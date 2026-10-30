@@ -1,4 +1,8 @@
-"""Parámetros explícitos de una tarea y plantillas conservadoras de demostraciones."""
+"""Utilidades de los ensayos de red. No se importan desde el asistente habitual.
+
+Conservan el comportamiento específico de las pruebas históricas. El aprendizaje
+normal guarda demostraciones sin crear estas plantillas ni aplicar estos formatos.
+"""
 import ipaddress
 import re
 import unicodedata

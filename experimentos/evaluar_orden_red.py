@@ -21,7 +21,7 @@ import agente
 import evaluacion
 import marcas
 import memoria
-import parametros
+from experimentos import parametros_red as parametros
 import precondiciones
 
 
@@ -64,14 +64,14 @@ def main():
                                     for k in ('mikrotik', 'winbox', 'routeros', 'dhcp', 'vlan'))],
              'prompt_agente_actual': agente.INSTRUCCION,
              'prompt_revisor_actual': precondiciones.INSTRUCCION,
-             'nota': 'Hay ayudas manuales DHCP/redes. No se modifican ni eliminan en este ensayo.'}
+             'nota': 'El controlador actual es general. Los formatos de red de este módulo solo analizan el ensayo; no se entregan al modelo.'}
     (a.salida/'ayudas-auditadas.json').write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding='utf8')
     manifiesto = {'tipo': 'Simulación de formulario y decisiones; no es WinBox ni usa visión/voz/input de PC',
                   'semilla_datos': semilla, 'semilla_modelo': 42, 'casos': casos,
                   'recetas_entregadas': False, 'notas_entregadas': False,
-                  'ayudas_manuales_del_programa_conservadas': True,
+                  'reglas_red_en_asistente_habitual': False,
                   'codigo_sha256': {n: hashlib.sha256((BASE/n).read_bytes()).hexdigest()
-                                    for n in ('agente.py', 'parametros.py', 'precondiciones.py', 'evaluacion.py',
+                                    for n in ('agente.py', 'experimentos/parametros_red.py', 'precondiciones.py', 'evaluacion.py',
                                               'experimentos/evaluar_orden_red.py')}}
     (a.salida/'condiciones.json').write_text(json.dumps(manifiesto, ensure_ascii=False, indent=2), encoding='utf8')
     resultados = []

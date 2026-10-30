@@ -25,7 +25,13 @@ como si fueran accesibles por UIA. No controla la PC ni modifica un router.
 No se corrigieron los prompts después de observar esos fallos para hacer pasar
 esta muestra. Los resultados completos, preguntas y ayudas se guardan por separado.
 
-## Auditoría de conocimiento
+## Auditoría de conocimiento de aquella ronda
+
+Esta sección describe el código usado en ese ensayo histórico. La limpieza de
+[aprendizaje general](aprendizaje-general.md) retiró después esas reglas del
+asistente y trasladó los validadores a `experimentos/parametros_red.py`. Ejecutar
+de nuevo el experimento utiliza el controlador actual y no reproduce los prompts
+ni las garantías de aquella versión.
 
 En la memoria activa se encontraron notas de VS Code y WhatsApp y doce recetas,
 sin notas ni recetas relacionadas con MikroTik/WinBox/RouterOS/DHCP/VLAN.

@@ -1,4 +1,4 @@
-# Tareas encadenadas, memoria breve y recetas con parámetros
+# Tareas encadenadas, memoria breve y demostraciones
 
 Esta ampliación experimental conserva los datos que una tarea necesita al cambiar
 de aplicación, verifica subtareas y guarda un resultado final. No modifica los
@@ -9,19 +9,12 @@ observados y las referencias aprendidas.
 
 - «Lee la cantidad de esta nota, luego escríbela en el formulario y guárdalo».
 - «Lee las instrucciones de esta nota y ejecútalas en el formulario de prueba».
-- «Mírame cómo crear una reserva DHCP para MAC AA:BB:CC:DD:EE:01,
-  IP 192.168.20.83, VLAN 20»; después de enseñar y guardar la demostración:
-  «Crea una reserva DHCP para MAC AA:BB:CC:DD:EE:02,
-  IP 192.168.40.9, VLAN 40».
+- «Mírame cómo crear un contacto llamado Elena»; después de guardar la
+  demostración: «Crea un contacto llamado Lucas».
 
-Los valores son ficticios. El procedimiento de red es un ejemplo de
-parametrización, no una configuración probada sobre un router.
-
-Una reserva DHCP identifica un cliente por MAC y le ofrece una IP determinada;
-no equivale a configurar una dirección en la interfaz del router. La
-[documentación oficial de MikroTik](https://manual.mikrotik.com/docs/network-management/dhcp/server/)
-describe esas funciones por separado. Fosfeno no deduce la topología, la subred,
-el servidor DHCP o los puertos correctos a partir de tres valores.
+La demostración queda como referencia de la aplicación. Los valores del pedido
+actual guían la nueva tarea; el modelo debe preguntar si falta uno necesario.
+No hay un catálogo de campos ni procedimientos de aplicaciones precargado.
 
 ## Memoria y estados
 
@@ -75,23 +68,15 @@ modelo y pueden necesitar aclaración.
 
 ## Recetas parametrizadas
 
-`parametros.py` reconoce MAC con seis pares hexadecimales, IPv4 con prefijo
-opcional y VLAN numérica (1–4094) o nombre explícito. Valida la forma, no su
-existencia o disponibilidad en la red. Varias IP/MAC posibles son una ambigüedad,
-no una invitación a elegir una.
+La parametrización automática específica de redes fue retirada del asistente.
+Sus utilidades históricas están aisladas en `experimentos/parametros_red.py`.
 
-Al guardar una demostración o receta exitosa se crea una plantilla solo para
-los valores nombrados en el objetivo que aparecieron en pasos de escritura.
-Se conservan los pasos originales para revisión. La plantilla sustituye esos
-literales por `{{mac}}`, `{{ip}}` y `{{vlan}}`; los clics no se parametrizan.
-Las recetas antiguas se pueden adaptar en memoria sin reescribirlas en disco.
-
-Al recuperar una plantilla se usan los parámetros de la orden actual. Si faltan
-o la operación aprendida no coincide, se muestra una pregunta sin reutilizar
-los valores de la demostración. La receta sigue siendo una referencia: deben
-volverse a observar los controles y las condiciones reales. Nombres de servidor,
-puertos, relaciones VLAN-servidor y otros campos aún no tienen sustitución
-automática; requieren enseñanza y comprobación adicionales.
+El modo «Mírame» conserva objetivo y pasos, con su aplicación y procedencia. Se
+recuperan solo recetas de la aplicación activa y se refrescan esas referencias
+cuando cambia la aplicación durante una tarea. Los metadatos `plantilla` antiguos
+se conservan en disco pero no se ejecutan ni se inyectan como reglas. El modelo
+adapta las demostraciones al pedido actual y a los controles observados; esta
+adaptación puede fallar. Ver [aprendizaje general](aprendizaje-general.md).
 
 ## Resultado final y comprobaciones
 
@@ -100,9 +85,11 @@ de Git. Incluye etapas comprobadas y pendientes, datos observados, respuesta y
 motivo de detención. El mensaje temporal muestra una versión breve y la consola
 indica dónde está el resumen completo. No se añadió síntesis de voz.
 
-`tests/test_tareas.py`, `tests/test_parametros.py` y `tests/test_flujo_tareas.py`
+`tests/test_tareas.py`, `tests/test_aprendizaje_general.py` y `tests/test_flujo_tareas.py`
 comprueban los límites, procedencia, fases, sustitución de valores y cierre del
 coordinador. La integración usa dobles de las entradas, no opera Windows.
+`tests/test_parametros.py` conserva únicamente comprobaciones de las utilidades
+de red aisladas en `experimentos/`; no valida una función del asistente habitual.
 `experimentos/evaluar_tareas_variables.py` consulta el modelo real sobre estados
 sintéticos y comprueba el resultado con un laboratorio independiente.
 
@@ -110,7 +97,8 @@ Estas pruebas no son operación real de WinBox, RouterOS ni recorrido completo
 del micrófono y entradas de Fosfeno. Los resultados del modelo y los cambios
 durante el desarrollo se documentan por ronda en el paquete de contexto.
 
-Después se añadió un [ensayo con GUI ficticia visible](mikrotik-simulado.md):
+En rondas históricas anteriores a esta limpieza se añadió un
+[ensayo con GUI ficticia visible](mikrotik-simulado.md):
 hubo adaptación de controles y parámetros, pero falló la anticipación de una IP
 ocupada. Se corrigieron la puntuación final de VLAN y la captura de celdas DataItem
 con su fila y columna. La prueba no valida el procedimiento en RouterOS real.

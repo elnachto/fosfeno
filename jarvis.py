@@ -18,7 +18,6 @@ import acciones
 import agente
 import marcas
 import memoria
-import parametros
 import tareas
 import voz
 
@@ -378,11 +377,7 @@ def _ejecutar_tarea(objetivo, escaneo, sello, tarea):
     partes = [e['objetivo'] for e in tarea.etapas]
     compuesto = len(partes) > 1
     recetas = [] if compuesto else memoria.buscar_recetas(objetivo, app_inicial)
-    if recetas and recetas[0].get('app') == app_inicial and recetas[0].get('plantilla'):
-        preparada = parametros.instanciar(recetas[0]['plantilla'], objetivo)
-        if not preparada['lista']:
-            tarea.terminar('requiere_datos', preparada['pregunta'])
-            return
+    app_referencias = app_inicial
     ejemplos = memoria.texto_recetas(recetas, objetivo)
     with open(ruta_log, "w", encoding="utf-8") as log:
         log.write("MOTOR: " + marcas.PERFIL["nombre"] + "\n")
@@ -401,6 +396,12 @@ def _ejecutar_tarea(objetivo, escaneo, sello, tarea):
                 time.sleep(0.45)
                 img, titulo, elementos = escanear()
             estado_actual = dict(marcas.ESTADO_UI)
+            app_actual = memoria.app_de(titulo)
+            if app_actual != app_referencias:
+                app_referencias = app_actual
+                recetas = [] if compuesto else memoria.buscar_recetas(objetivo, app_actual)
+                ejemplos = memoria.texto_recetas(recetas, objetivo)
+                log.write('REFERENCIAS DE APLICACIÓN: ' + app_actual + '\n' + ejemplos + '\n')
             if traza and estado_anterior is not None:
                 cambio = agente.huella(estado_anterior, traza[-1].pop("_elementos", elementos)) != agente.huella(estado_actual, elementos)
                 traza[-1]["resultado"] = {"cambio_observable": cambio,

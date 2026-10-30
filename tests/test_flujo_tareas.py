@@ -11,6 +11,37 @@ import tareas
 
 
 class FlujoTests(unittest.TestCase):
+    def test_referencias_se_refrescan_al_cambiar_de_aplicacion(self):
+        imagen = MagicMock(size=(500, 400))
+        elementos = [('Edit', 'Texto', 0, 0, 400, 300)]
+        estado = {'ventana': 'Origen', 'hwnd': 10, 'foco': {'n': 1, 'editable': True}, 'texto_visible': ''}
+        propuestas = iter([{'tipo': 'esperar'}, {'tipo': 'preguntar', 'texto': 'Fin del doble'}])
+        ejemplos = []
+        def decidir(*args, **kwargs):
+            ejemplos.append(args[5])
+            return next(propuestas), '{}', '', imagen, 0
+        rs = [[{'app': app, 'objetivo': 'Procedimiento aprendido', 'fuente': 'demostracion',
+                'pasos': ['escribí «ejemplo '+app+'»']}] for app in ('origen', 'destino')]
+        with tempfile.TemporaryDirectory() as carpeta, \
+             patch.object(marcas, 'OUT', carpeta), patch.object(marcas, 'ESTADO_UI', estado), \
+             patch.object(marcas, 'PERFIL', {'agente_estado': True, 'nombre': 'Doble'}), \
+             patch.object(marcas, 'partir_objetivo', return_value=[]), \
+             patch.object(marcas, 'decidir_accion', side_effect=decidir), \
+             patch.object(marcas, 'capturar_estado', return_value=estado), \
+             patch.object(marcas, 'evidencia_archivos', return_value=[]), \
+             patch.object(marcas, 'evidencia_copias', return_value=[]), \
+             patch.object(jarvis, 'escanear', return_value=(imagen, 'Destino', elementos)), \
+             patch.object(jarvis, 'es_mi_consola', return_value=False), \
+             patch.object(jarvis.memoria, 'buscar_recetas', side_effect=rs) as buscar, \
+             patch.object(jarvis, 'guardar_exito'), patch.object(jarvis, 'avisar'), \
+             patch.object(jarvis, 'esperar_cancelacion', return_value=False), \
+             patch.object(jarvis.time, 'sleep'), patch.object(jarvis, 'control'), patch.object(jarvis, 'capa'):
+            jarvis.ejecutar('Realiza el procedimiento aprendido', (imagen, 'Origen', elementos), 'test')
+        self.assertEqual([c.args[1] for c in buscar.call_args_list], ['origen', 'destino'])
+        self.assertIn('ejemplo origen', ejemplos[0])
+        self.assertNotIn('ejemplo origen', ejemplos[1])
+        self.assertIn('ejemplo destino', ejemplos[1])
+
     def test_nada_se_recupera_solo_con_verificacion_y_cierra_etapas(self):
         propuestas = iter([{'tipo': 'recordar', 'texto': '{"clave":"cantidad","valor":"83"}'},
                            {'tipo': 'siguiente'}, {'tipo': 'decir', 'texto': 'La cantidad es 83.'}, {'tipo': 'nada'}])

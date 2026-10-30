@@ -24,7 +24,6 @@ os.environ['FOSFENO_MOTOR'] = 'nemotron'
 import agente
 import marcas
 import memoria
-import parametros
 import tareas
 import uiautomation as auto
 
@@ -215,14 +214,10 @@ def main():
                     inicio, nreq = time.monotonic(), len(marcas.PETICIONES)
                     estado['archivos_observados'] = marcas.evidencia_archivos(sesion['objetivo'])
                     estado['copias_observadas'] = marcas.evidencia_copias(sesion['objetivo'], sesion['traza'])
-                    ejemplos, recetas, preflight = '', [], None
+                    ejemplos, recetas = '', []
                     if args.conocimiento and not sesion.get('sin_recetas', False):
                         recetas = memoria.buscar_recetas(sesion['objetivo'], memoria.app_de(titulo))
                         ejemplos = memoria.texto_recetas(recetas, sesion['objetivo'])
-                        if recetas and recetas[0].get('plantilla'):
-                            preparada = parametros.instanciar(recetas[0]['plantilla'], sesion['objetivo'])
-                            if not preparada['lista']:
-                                preflight = {'tipo': 'preguntar', 'texto': preparada['pregunta'], '_origen': 'validacion_parametros'}
                     sesion['referencias_recuperadas'] = recetas
                     sesion['ejemplos_entregados'] = ejemplos
                     accion = agente.continuar_pendiente(sesion['pendiente'], estado, elementos, imagen, marcas.preguntar_json)
@@ -230,13 +225,10 @@ def main():
                     if accion:
                         crudo = 'Continuación de escritura con foco observado'
                     else:
-                        if preflight:
-                            accion, crudo = preflight, 'Validación determinista de parámetros antes de la inferencia'
-                        else:
-                            accion, crudo, _, _, _ = marcas.decidir_accion(sesion['objetivo'], imagen, titulo, elementos,
-                                                                    sesion['historial'], estado=estado, traza=sesion['traza'],
-                                                                    feedback=sesion.pop('feedback', ''), ejemplos=ejemplos,
-                                                                    tarea=tarea_actual[0])
+                        accion, crudo, _, _, _ = marcas.decidir_accion(sesion['objetivo'], imagen, titulo, elementos,
+                                                                sesion['historial'], estado=estado, traza=sesion['traza'],
+                                                                feedback=sesion.pop('feedback', ''), ejemplos=ejemplos,
+                                                                tarea=tarea_actual[0])
                     resultado = {'accion': accion, 'crudo': crudo, 'ventana': titulo, 'estado': estado,
                                  'codigo_sha256': {n: hashlib.sha256((BASE / n).read_bytes()).hexdigest() for n in CODIGO_AUDITADO},
                                  'elementos': elementos, 'truncado': truncado, 'segundos': round(time.monotonic() - inicio, 3)}

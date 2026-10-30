@@ -13,15 +13,15 @@ La idea nace de la fantasía del asistente tipo **Jarvis** (un compañero que ve
 - **Pregunta:** "¿qué significa este error?" responde con lo que ve en pantalla.
 - **Guía:** "¿cómo abro una pestaña nueva?" te señala el botón con una animación y te ofrece hacerlo por ti.
 - **Hazlo:** "abre WhatsApp y dile hola a Mamá" hace clic, escribe y pulsa teclas, paso a paso, con cuenta atrás y cancelación con `Esc`.
-- **Aprende por demostración:** "mírame cómo se crea un usuario" observa lo que haces, limpia los errores y guarda una receta.
+- **Aprende por demostración:** "mírame cómo se crea un usuario" observa lo que haces, limpia los errores y guarda una receta de esa aplicación. Ver [aprendizaje general](docs/aprendizaje-general.md).
 - **Encadena tareas (experimental):** conserva datos breves al cambiar de ventana,
   verifica subtareas y guarda un resumen final con lo comprobado y pendiente.
-  Las recetas pueden reutilizar MAC, IPv4 y VLAN como parámetros. Ver
+  Las demostraciones se recuperan como ejemplos para adaptar al pedido actual. Ver
   [alcance y ejemplos](docs/tareas-y-parametros.md).
 - **Explora una app:** "explora esta app" describe los controles visibles y guarda un mapa de esa ventana. Ver las limitaciones actuales más abajo.
 - **Revisa antes de confirmar (experimental):** contrasta formularios con el pedido
   y bloquea algunos reintentos sin corregir tras un rechazo. El revisor aún pide
-  aclaraciones innecesarias en ciertos escenarios. Ver [pruebas y límites](docs/gns3-mikrotik.md).
+  aclaraciones innecesarias en ciertos escenarios. Ver [pruebas y límites](docs/aprendizaje-general.md).
 - **Se corrige con la voz:** "no, era el botón de arriba" o "recuerda que aquí se guarda con Ctrl+S".
 - **Se marea** si das muchas vueltas con el mouse.
 - **Conversa:** responde con expresiones a "gracias", "hola", "buen trabajo", "¿cómo estás?" y similares, sin tocar nada.
@@ -262,7 +262,6 @@ de filas y columnas y explica los límites y prompts utilizados.
 | `motor_ia.py` | Perfiles de Nemotron y LFM3: servidor y parámetros de generación |
 | `agente.py` | Estado, validación de acciones, continuidad de escritura y verificación del objetivo |
 | `tareas.py` | Subtareas, memoria breve con procedencia y respuesta final persistente |
-| `parametros.py` | Validación de MAC/IPv4/VLAN y plantillas de recetas con valores actuales |
 | `precondiciones.py` | Revisión de formularios, firma de valores y bloqueo de reintentos rechazados |
 | `servidores_lfm3.py` | Arranque y comprobación de los servidores de los tres modos |
 | `evaluacion.py` | Comparación reproducible en ocho tareas simuladas |

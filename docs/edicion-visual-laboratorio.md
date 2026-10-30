@@ -65,6 +65,7 @@ Se añadieron comprobaciones genéricas de foco y de opciones desplegadas. El re
 visual también dio falsos permisos; comparte modelo con el planificador. La nueva
 observación previa de foco no consiguió identificarlo en los casos anotados y
 añade consultas: queda experimental, sin una mejora de precisión demostrada.
-No se añadieron recetas de WinBox ni rutas de menú. Sí siguen existiendo los
+No se añadieron recetas de WinBox ni rutas de menú. En aquella ronda había
 validadores y ejemplos de red escritos a mano, declarados en
-[órdenes simuladas](ordenes-red-simuladas.md).
+[órdenes simuladas](ordenes-red-simuladas.md). La limpieza posterior de
+[aprendizaje general](aprendizaje-general.md) los retiró del asistente habitual.

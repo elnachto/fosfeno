@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 import memoria
-import parametros
+from experimentos import parametros_red as parametros
 
 OBJETIVO = 'Reserva por DHCP la IP 192.168.20.83 para MAC AA:BB:CC:DD:EE:01 en VLAN 20'
 PASOS = ['clic en «Leases»', 'escribí «AA:BB:CC:DD:EE:01» en «MAC Address»',
@@ -74,15 +74,16 @@ class ParametrosTests(unittest.TestCase):
         self.assertFalse(r['lista'])
         self.assertIn('reserva DHCP', r['pregunta'])
 
-    def test_receta_persistida_y_legacy_se_instancian_sin_reescribir_original(self):
+    def test_validadores_experimentales_no_parametrizan_memoria_habitual(self):
         with tempfile.TemporaryDirectory() as carpeta, patch.object(memoria, 'CONOCIMIENTO', carpeta), \
                 patch.object(memoria, 'RECETAS', str(Path(carpeta) / 'recetas.jsonl')):
             memoria.guardar_receta('winbox', OBJETIVO, PASOS, 'demostracion')
             contenido = Path(memoria.RECETAS).read_text(encoding='utf-8')
+            self.assertNotIn('plantilla', json.loads(contenido))
             r = memoria.buscar_recetas('Reserva por DHCP IP 192.168.40.9 MAC AA:BB:CC:DD:EE:02 VLAN 40', 'winbox')
             texto = memoria.texto_recetas(r, 'Reserva por DHCP IP 192.168.40.9 MAC AA:BB:CC:DD:EE:02 VLAN 40')
-            self.assertIn('192.168.40.9', texto)
-            self.assertNotIn('192.168.20.83', texto)
+            self.assertIn('192.168.20.83', texto)  # Ejemplo literal de la demostración, no orden actual.
+            self.assertNotIn('{{', texto)
             self.assertEqual(Path(memoria.RECETAS).read_text(encoding='utf-8'), contenido)
 
 
