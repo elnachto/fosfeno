@@ -198,3 +198,10 @@ Una [segunda ronda de lectura con referencias](lectura-con-referencias.md) pasó
 leyó la pareja DHCP/interfaz y dos tablas sintéticas con valores nuevos. Conserva
 fallos previos de selección, duplicación y salida agotada. No prueba nuevas apps
 reales ni completa la operación de IPv4/reservas en WinBox.
+
+La [simulación posterior de órdenes MAC/IP/VLAN](ordenes-red-simuladas.md), sin
+recetas nuevas y con las ayudas manuales existentes declaradas, guardó dos
+reservas explícitas correctamente. La orden ambigua eligió IP de interfaz sin
+aclarar; ante conflicto el revisor preguntó si podía sobrescribir pese a conservar
+reservas. No se cuentan esos dos componentes como éxitos completos ni como
+ejecuciones reales en MikroTik.
