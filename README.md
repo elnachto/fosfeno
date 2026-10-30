@@ -14,6 +14,9 @@ La idea nace de la fantasía del asistente tipo **Jarvis** (un compañero que ve
 - **Guía:** "¿cómo abro una pestaña nueva?" te señala el botón con una animación y te ofrece hacerlo por ti.
 - **Hazlo:** "abre WhatsApp y dile hola a Mamá" hace clic, escribe y pulsa teclas, paso a paso, con cuenta atrás y cancelación con `Esc`.
 - **Aprende por demostración:** "mírame cómo se crea un usuario" observa lo que haces, limpia los errores y guarda una receta de esa aplicación. Ver [aprendizaje general](docs/aprendizaje-general.md).
+  La [ampliación visual](docs/aprendizaje-visual.md), implementada y pendiente de
+  pruebas, conserva capturas y eventos e incorpora interpretaciones como referencias
+  para ayuda, guía y acciones.
 - **Encadena tareas (experimental):** conserva datos breves al cambiar de ventana,
   verifica subtareas y guarda un resumen final con lo comprobado y pendiente.
   Las demostraciones se recuperan como ejemplos para adaptar al pedido actual. Ver

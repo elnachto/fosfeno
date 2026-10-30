@@ -67,7 +67,7 @@ def corto(texto, n=60):
 
 
 class Demostracion:
-    def __init__(self, permitir_inyectados=False):
+    def __init__(self, permitir_inyectados=False, carpeta_visual=None):
         self.pasos = []
         self.permitir_inyectados = permitir_inyectados
         self.app_titulo = ""
@@ -79,6 +79,17 @@ class Demostracion:
         self.listo_ganchos = threading.Event()
         self._raton = None
         self._teclado = None
+        self.visual = None
+        self.ruta_visual = None
+        self.error_visual = None
+        self._instante_evento = time.monotonic()
+        if carpeta_visual is not None:
+            from demostraciones import RegistroVisual
+            try:
+                self.visual = RegistroVisual(carpeta_visual,
+                    origen='automatizacion_autorizada' if permitir_inyectados else 'usuario')
+            except OSError as error:
+                self.error_visual = type(error).__name__
 
     def iniciar(self):
         self.hilo_trabajo = threading.Thread(target=self._trabajar, daemon=True)
@@ -105,14 +116,14 @@ class Demostracion:
             if codigo == 0 and wparam in (WM_LBUTTONDOWN, WM_RBUTTONDOWN):
                 d = ctypes.cast(lparam, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
                 if self.permitir_inyectados or not d.flags & LLMHF_INJECTED:
-                    self.eventos.put(("clic", d.pt.x, d.pt.y, wparam == WM_RBUTTONDOWN))
+                    self.eventos.put(("clic", d.pt.x, d.pt.y, wparam == WM_RBUTTONDOWN, time.monotonic()))
             return user32.CallNextHookEx(None, codigo, wparam, lparam)
 
         def teclado(codigo, wparam, lparam):
             if codigo == 0 and wparam in (WM_KEYDOWN, WM_SYSKEYDOWN):
                 d = ctypes.cast(lparam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
                 if self.permitir_inyectados or not d.flags & LLKHF_INJECTED:
-                    self.eventos.put(("tecla", int(d.vkCode), pulsada(0x11), pulsada(0x12)))
+                    self.eventos.put(("tecla", int(d.vkCode), pulsada(0x11), pulsada(0x12), time.monotonic()))
             return user32.CallNextHookEx(None, codigo, wparam, lparam)
 
         self._raton = HOOKPROC(raton)
@@ -131,6 +142,8 @@ class Demostracion:
 
     def _trabajar(self):
         with auto.UIAutomationInitializerInThread():
+            if self.visual:
+                self.visual.muestrear(forzar=True)
             tipeando = False
             valor = ""
             campo = ""
@@ -149,12 +162,23 @@ class Demostracion:
                     if c:
                         campo = c
                 if ev is None:
+                    if self.visual:
+                        if tipeando:
+                            self._guardar_texto(valor, campo, secreto)
+                            tipeando = False
+                        self.visual.muestrear()
                     continue
                 tipo = ev[0]
                 if tipo == "fin":
                     if tipeando:
                         self._guardar_texto(valor, campo, secreto)
+                    if self.visual:
+                        try:
+                            self.ruta_visual = self.visual.guardar()
+                        except OSError as error:
+                            self.error_visual = type(error).__name__
                     break
+                self._instante_evento = ev[-1]
                 if tipo == "clic":
                     if tipeando:
                         self._guardar_texto(valor, campo, secreto)
@@ -175,16 +199,18 @@ class Demostracion:
                         self._guardar_texto(valor, campo, secreto)
                         tipeando = False
                     self._anotar_ventana()
-                    self.pasos.append("pulsé la tecla " + combo)
+                    self._registrar_paso("pulsé la tecla " + combo, 'tecla')
                     continue
                 if vk in ESPECIALES:
                     if tipeando:
                         self._guardar_texto(valor, campo, secreto)
                         tipeando = False
                     self._anotar_ventana()
-                    self.pasos.append("pulsé la tecla " + ESPECIALES[vk])
+                    self._registrar_paso("pulsé la tecla " + ESPECIALES[vk], 'tecla')
                     continue
                 if not tipeando:
+                    if self.visual:
+                        self.visual.empezar_texto(self._instante_evento)
                     tipeando = True
                     valor = ""
                     campo = ""
@@ -237,11 +263,16 @@ class Demostracion:
         self._anotar_ventana()
         donde = " en «" + campo + "»" if campo else ""
         if secreto:
-            self.pasos.append("escribí una contraseña" + donde + " (no la guardo)")
+            self._registrar_paso("escribí una contraseña" + donde + " (no la guardo)", 'escritura', secreto=True)
         elif valor and valor.strip():
-            self.pasos.append("escribí «" + corto(valor, 120) + "»" + donde)
+            self._registrar_paso("escribí «" + corto(valor, 120) + "»" + donde, 'escritura')
         else:
-            self.pasos.append("escribí texto" + donde)
+            self._registrar_paso("escribí texto" + donde, 'escritura')
+
+    def _registrar_paso(self, texto, tipo, punto=None, secreto=False):
+        self.pasos.append(texto)
+        if self.visual:
+            self.visual.registrar(texto, tipo, self._instante_evento, punto, secreto)
 
     def _registrar_clic(self, x, y, derecho):
         try:
@@ -281,4 +312,4 @@ class Demostracion:
             texto = accion + " un elemento sin nombre"
         if barra:
             texto += " en la barra de tareas"
-        self.pasos.append(texto)
+        self._registrar_paso(texto, 'clic', (x,y))

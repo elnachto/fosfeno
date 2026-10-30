@@ -851,7 +851,10 @@ def aprender(objetivo, titulo, sello):
     if not objetivo:
         avisar("Dime qué me enseñas, por ejemplo: mírame cómo se abre una pestaña", 4.0, expresion="confundido")
         return
-    demo = mirame.Demostracion()
+    from pathlib import Path
+    import uuid
+    carpeta_visual = Path(marcas.OUT)/'demostraciones'/(sello+'-'+uuid.uuid4().hex[:8])
+    demo = mirame.Demostracion(carpeta_visual=carpeta_visual)
     demo.iniciar()
     capa.enviar(cmd="estado", valor="observando")
     capa.enviar(cmd="plan", hechos=0, activo=True)
@@ -881,8 +884,19 @@ def aprender(objetivo, titulo, sello):
     app = memoria.app_de(titulo_app) or memoria.app_de(titulo)
     capa.enviar(cmd="estado", valor="pensando")
     capa.enviar(cmd="mensaje", texto="Repasando lo que hiciste…", duracion=20)
-    limpios = memoria.limpiar_pasos(pasos)
-    limpios = marcas.depurar_pasos(objetivo, limpios) if limpios else []
+    # Con evidencia visual se conserva la secuencia: un clic genérico o repetido
+    # puede colocar objetos, mover el cursor o completar una acción en un lienzo.
+    visual = getattr(demo, 'ruta_visual', None)
+    limpios = memoria.limpiar_pasos(pasos, conservar_superficies=True)
+    if getattr(demo, 'error_visual', None):
+        print('Captura visual incompleta:', demo.error_visual)
+    conocimiento = None
+    if visual:
+        try:
+            from demostraciones import interpretar
+            conocimiento = interpretar(visual, objetivo, marcas.preguntar_json)
+        except (OSError, ValueError, marcas.ErrorRespuestaModelo) as error:
+            print('No pude interpretar la demostración visual:', error)
     capa.enviar(cmd="estado", valor="idle")
     with open(os.path.join(marcas.OUT, "log_aprender_" + sello + ".txt"), "w", encoding="utf-8") as f:
         f.write("OBJETIVO: " + objetivo + "\nAPP: " + app + "\n\nGRABADO:\n" + "\n".join(pasos) + "\n\nLIMPIO:\n" + "\n".join(limpios) + "\n")
@@ -903,8 +917,9 @@ def aprender(objetivo, titulo, sello):
         avisar("Descartado, enséñamelo otra vez cuando quieras", 3.0)
         capa.enviar(cmd="plan_fin")
         return
-    memoria.guardar_receta(app, objetivo, limpios, "demostracion", crudos=pasos)
-    avisar("Aprendí «" + objetivo + "» (" + str(len(limpios)) + " pasos)", 3.5, expresion="enamorado")
+    memoria.guardar_receta(app, objetivo, limpios, "demostracion", crudos=pasos,
+                          demostracion_visual=visual, conocimiento=conocimiento)
+    avisar("Guardé la demostración «" + objetivo + "» (" + str(len(limpios)) + " pasos)", 3.5, expresion="enamorado")
     time.sleep(0.8)
     capa.enviar(cmd="plan_fin")
 
