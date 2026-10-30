@@ -64,8 +64,9 @@ Esto limita el formato de respuesta, no impone qué tabla ni qué valores elegir
 
 Con la vista de servidores DHCP visible, pedir «Lee el nombre del servidor DHCP y
 su interfaz» es una prueba razonable de lectura. La navegación experimental de la
-ronda anterior permanece disponible. Crear reservas, cambiar IP y aprender nuevos
-procedimientos visuales siguen bloqueados. La tarea completa de IPv4 más DHCP aún
+ronda anterior permanece disponible. La [edición visual de laboratorio](edicion-visual-laboratorio.md)
+permite ensayar formularios reales con vinculación explícita a una ventana;
+aprender nuevos procedimientos visuales sigue bloqueado. La tarea completa de IPv4 más DHCP aún
 requiere navegar, tratar columnas cortadas y conservar datos entre vistas.
 
 Activación en la PC del laboratorio:
@@ -84,6 +85,6 @@ configuración global. No abrir varias instancias que compitan por los atajos.
 
 - Separar paneles y distinguir encabezados, pestañas y botones con más evidencia.
 - Leer celdas cortadas, recorrer tablas largas y manejar iconos sin texto.
-- Verificar foco antes de habilitar escritura o edición visual.
+- Mejorar la comprobación visual del foco y distinguir etiquetas de entradas.
 - Conservar hechos entre vistas con procedencia comprobable y una respuesta final
   que no marque un pedido compuesto como completo por una lectura parcial.

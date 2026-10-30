@@ -238,7 +238,10 @@ Cosas para probar:
 
 Hay un [piloto de percepción OCR para ventanas con pocos controles accesibles](docs/percepcion-hibrida.md).
 Está desactivado por defecto. Permite experimentar con navegación por etiquetas
-visuales; todavía falla al relacionar datos de tablas y no habilita edición ni aprendizaje visual.
+visuales; todavía falla al relacionar datos de tablas. La
+[edición visual de laboratorio](docs/edicion-visual-laboratorio.md) permite ensayar
+escritura, teclas y guardado en una ventana vinculada explícitamente. El aprendizaje
+visual automático sigue desactivado.
 La [lectura con referencias](docs/lectura-con-referencias.md) añade comprobaciones
 de filas y columnas y explica los límites y prompts utilizados.
 

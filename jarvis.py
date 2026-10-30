@@ -413,7 +413,7 @@ def _ejecutar_tarea(objetivo, escaneo, sello, tarea):
             if not elementos:
                 avisar("No puedo ver los botones de esta ventana", expresion="triste")
                 return
-            continuacion = agente.continuar_pendiente(pendiente, estado_actual, elementos)
+            continuacion = agente.continuar_pendiente(pendiente, estado_actual, elementos, img, marcas.preguntar_json)
             pendiente = None
             if continuacion:
                 accion, respuesta, lista, marcada, seg = continuacion, "Continuación de escritura con foco comprobado", marcas.construir_lista(elementos, *img.size), marcas.marcar(img, elementos), 0.0
@@ -563,7 +563,11 @@ def _ejecutar_tarea(objetivo, escaneo, sello, tarea):
                 historial.append("clic en «" + etiqueta(elemento) + "»")
                 log.write("EJECUTADO: " + historial[-1] + "\n")
             elif tipo == "escribir":
-                if marcas.PERFIL.get("agente_estado"):
+                if accion.get('_escritura_visual'):
+                    if not marcas.validar_escritura_visual(accion, actual.get('hwnd')):
+                        feedback = 'La escritura visual perdió su ventana de laboratorio o la captura caducó.'
+                        continue
+                elif marcas.PERFIL.get("agente_estado"):
                     foco = actual.get("foco", {})
                     elegido = estado_actual.get("foco", {})
                     if not foco.get("editable") or foco.get("secreto") or foco.get("nombre") != elegido.get("nombre"):
@@ -576,7 +580,7 @@ def _ejecutar_tarea(objetivo, escaneo, sello, tarea):
                     avisar("Cancelado.")
                     return
                 comprobado = marcas.capturar_estado(marcas.nombre_ventana(), elementos)
-                if (estado_actual.get("hwnd") and comprobado.get("hwnd") != estado_actual["hwnd"]) or comprobado.get("foco", {}).get("n") != actual.get("foco", {}).get("n"):
+                if (estado_actual.get("hwnd") and comprobado.get("hwnd") != estado_actual["hwnd"]) or (not accion.get('_escritura_visual') and comprobado.get("foco", {}).get("n") != actual.get("foco", {}).get("n")):
                     avisar("Cambió el foco antes de escribir. Me detuve.", expresion="confundido")
                     return
                 control("escribir")
@@ -585,7 +589,7 @@ def _ejecutar_tarea(objetivo, escaneo, sello, tarea):
                         avisar("Cancelado.")
                         return
                     seleccionado = marcas.capturar_estado(marcas.nombre_ventana(), elementos)
-                    if seleccionado.get('hwnd') != comprobado.get('hwnd') or seleccionado.get('foco', {}).get('n') != comprobado.get('foco', {}).get('n') or seleccionado.get('foco', {}).get('secreto') or not seleccionado.get('foco', {}).get('editable'):
+                    if seleccionado.get('hwnd') != comprobado.get('hwnd') or (not accion.get('_escritura_visual') and (seleccionado.get('foco', {}).get('n') != comprobado.get('foco', {}).get('n') or seleccionado.get('foco', {}).get('secreto') or not seleccionado.get('foco', {}).get('editable'))):
                         avisar('El foco cambió al seleccionar. Me detuve antes de escribir.', expresion='confundido')
                         return
                 if not acciones.escribir(accion["texto"]):

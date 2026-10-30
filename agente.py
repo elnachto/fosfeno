@@ -282,6 +282,13 @@ Example: a search query was typed and still needs submission:
 {"evidencia":"The query is in the search input. Submit it.","objetivo_pendiente":"Run the search","accion":"TECLA","n":0,"texto":"enter"}
 """
 
+INSTRUCCION_VISUAL_PILOTO = next(linea for linea in INSTRUCCION.splitlines() if linea.startswith('VisualText IDs'))
+INSTRUCCION_VISUAL_EDICION = ('VisualText IDs are OCR text regions, not native widgets. With edicion_visual=false only navigation and reading are supported. '
+    'With edicion_visual=true the user authorized edits in the bound laboratory window: CLIC may open/focus/apply, TECLA may navigate forms, '
+    'and ESCRIBIR with n=0 types into the field visibly focused in the screenshot. Use click or Tab to focus first; UIA may not expose this field. '
+    'Do not invent an editable control ID. Read the actual visible values before applying changes. Authentication, security changes, deletion/reset '
+    'and terminals are outside this experiment. Each visual click requires point review.')
+
 
 def controles_para(objetivo, elementos, foco=None, limite=70, detalles=None):
     palabras = set(re.findall(r"[a-z0-9]{3,}", normalizar(objetivo)))
@@ -306,7 +313,7 @@ def controles_para(objetivo, elementos, foco=None, limite=70, detalles=None):
             for _, n, tipo, nombre in sorted(elegidos, key=lambda item: item[1])]
 
 
-def convertir(dato, elementos, normalizar_tecla):
+def convertir(dato, elementos, normalizar_tecla, permitir_visual=False):
     if not isinstance(dato, dict):
         raise ValueError("La respuesta debe ser un objeto JSON")
     tipo = str(dato.get("accion", "")).upper()
@@ -332,7 +339,7 @@ def convertir(dato, elementos, normalizar_tecla):
             n = dato["n"]
             if type(n) is not int or not 1 <= n <= len(elementos):
                 raise ValueError("El campo de escritura no existe")
-            if not es_editable(elementos[n - 1][0]):
+            if not es_editable(elementos[n - 1][0]) and not (permitir_visual and elementos[n-1][0] == 'VisualText'):
                 raise ValueError("El destino de escritura no es un campo editable")
             accion["n"] = n
         if tipo == "ESCRIBIR":
@@ -416,9 +423,17 @@ def proponer(objetivo, elementos, estado, historial, consultar, normalizar_tecla
     foco = dict(estado.get("foco") or {})
     solo_marco = solo_marco_accesible(elementos, estado)
     controles = controles_para(objetivo, elementos, foco, detalles=estado.get("detalles"))
+    if estado.get('edicion_visual'):
+        # El OCR puede contener más texto de fondo que un árbol UIA. Conservar
+        # cobertura de la parte inferior sin repetir metadatos por cada región.
+        controles = controles_para(objetivo, elementos, foco, limite=210, detalles=estado.get('detalles'))
+        controles = [({'id': c['id'], 'rol': 'VisualText', 'nombre': c['nombre'],
+                       'rect': list(elementos[c['id']-1][2:])} if c['rol'] == 'VisualText' else c)
+                     for c in controles]
     observacion = {
         "ventana": estado.get("ventana", ""), "foco": foco,
         'solo_marco_accesible': solo_marco,
+        'edicion_visual': bool(estado.get('edicion_visual')),
         'captura_incompleta': bool(estado.get('captura_incompleta')),
         'archivos_observados': estado.get('archivos_observados', []),
         'copias_observadas': estado.get('copias_observadas', []),
@@ -431,14 +446,39 @@ def proponer(objetivo, elementos, estado, historial, consultar, normalizar_tecla
     }
     if tarea is not None:
         observacion['tarea'] = tarea.contexto()
+    if estado.get('edicion_visual'):
+        import percepcion_ocr
+        observacion['foco_visual'] = percepcion_ocr.observar_foco(imagen, elementos, estado, consultar)
+        estado['foco_visual'] = observacion['foco_visual']
+        if estado.get('percepcion_ocr') and not foco.get('editable'):
+            observacion['foco'] = {'disponible': False,
+                'motivo': 'UIA solo expone el marco; el foco interior se observa en la imagen, no en UIA'}
+        observacion['capacidades_visuales'] = {
+            'teclado_en_formulario': True, 'escribir_en_foco_visual_con_n_cero': True,
+            'ids_editables_uia_no_requeridos': True,
+            'alcance': 'Ventana de laboratorio vinculada; observa foco y valores en la imagen'}
     problemas = [feedback] if feedback else []
     for intento in range(3):
         # Texto accesible para planificar; visión disponible en la revisión.
         try:
             prompt = prompt_acotado(objetivo, observacion, referencias, partes, problemas)
-            dato = consultar(INSTRUCCION, prompt, esquema(len(elementos)),
+            instruccion = INSTRUCCION
+            if estado.get('edicion_visual'):
+                instruccion = instruccion.replace(INSTRUCCION_VISUAL_PILOTO, INSTRUCCION_VISUAL_EDICION)
+                instruccion += ('\nThe visual editing adapter IS ACTIVE in this bound laboratory window. '
+                                'You can focus through clicks or Tab and type ESCRIBIR with n=0. '
+                                'Do not ask the user for internal control IDs: they are not user data. '
+                                'foco is the native UIA observation and may only report the root window. '
+                                'foco_visual is a separate image-based hypothesis; when confirmed it supports ESCRIBIR n=0 '
+                                'after checking the intended destination. Its n_region_ocr is not a native editable ID. '
+                                'Use the screenshot to see the focused input. If unable, explain the observed obstacle, not a request for IDs. '
+                                'An option visible in an OPEN dropdown is a candidate, not proof of the selected value. '
+                                'Select it, then observe the value in the closed field before applying the form.')
+            dato = consultar(instruccion, prompt, esquema(len(elementos)),
                              imagen if intento > 0 or solo_marco or estado.get('percepcion_ocr') else None)
-            accion = convertir(dato, elementos, normalizar_tecla)
+            if estado.get('edicion_visual'):
+                dato['foco_visual_observado'] = observacion['foco_visual']
+            accion = convertir(dato, elementos, normalizar_tecla, permitir_visual=bool(estado.get('edicion_visual')))
             validar_clic_marco(accion, objetivo, estado)
             if estado.get('percepcion_ocr'):
                 import percepcion_ocr
@@ -470,7 +510,7 @@ def proponer(objetivo, elementos, estado, historial, consultar, normalizar_tecla
             validar_reemplazo(accion, objetivo, estado)
             accion = ampliar_seleccion_adyacente(accion, objetivo, elementos, estado)
             accion = abrir_destino_antes_de_pegar(accion, objetivo, elementos, estado)
-            if accion["tipo"] == "escribir":
+            if accion["tipo"] == "escribir" and not accion.get('_escritura_visual'):
                 destino = accion.get("n") or foco.get("n")
                 if destino and estado.get('detalles', {}).get(str(destino), {}).get('solo_lectura'):
                     raise ValueError('El campo observado es de solo lectura')
@@ -511,7 +551,10 @@ def proponer(objetivo, elementos, estado, historial, consultar, normalizar_tecla
             if ciclo_sin_progreso(accion, elementos, estado, traza):
                 raise ValueError("Ciclo: esta acción ya se intentó dos veces desde este mismo estado. Revisa el resultado y cambia de estrategia")
             precondiciones.validar_reintento(accion, elementos, estado, traza)
-            if precondiciones.es_envio(accion, elementos, estado):
+            confirmacion_visual = estado.get('edicion_visual') and (
+                accion.get('_revision_visual', {}).get('tipo') == 'confirmacion'
+                or accion['tipo'] == 'tecla' and accion.get('tecla') == 'enter')
+            if precondiciones.es_envio(accion, elementos, estado) or confirmacion_visual:
                 bloqueo = precondiciones.revisar(objetivo, accion, observacion, consultar, imagen, prompt_acotado)
                 if bloqueo:
                     return bloqueo, dato, intento + 1
@@ -524,12 +567,29 @@ def proponer(objetivo, elementos, estado, historial, consultar, normalizar_tecla
     return {"tipo": "nada", "_evidencia": " | ".join(problemas)}, locals().get("dato", {}), 3
 
 
-def continuar_pendiente(pendiente, estado, elementos):
+def continuar_pendiente(pendiente, estado, elementos, imagen=None, consultar=None):
     if not pendiente:
         return None
     foco = estado.get("foco") or {}
     if pendiente.get("_ventana") and pendiente["_ventana"] != estado.get("hwnd"):
         return None
+    if pendiente.get('_destino_visual'):
+        if (not estado.get('edicion_visual') or estado.get('raiz_edicion_visual') != pendiente.get('_raiz_visual')
+                or tuple(pendiente['_destino_visual']) not in elementos or foco.get('secreto')):
+            return None
+        if imagen is None or consultar is None:
+            return None
+        accion = {'tipo': 'escribir', 'texto': pendiente['texto'], 'n': 0,
+                'reemplazar': pendiente.get('reemplazar', False),
+                '_destino_visual': pendiente['_destino_visual'],
+                '_evidencia': 'Continuación con nueva revisión visual del foco; sin confirmación UIA'}
+        try:
+            import percepcion_ocr
+            percepcion_ocr.revisar_accion(accion, elementos, estado, imagen, consultar,
+                                        objetivo=pendiente.get('_objetivo_usuario', ''))
+        except ValueError:
+            return None
+        return accion
     n = foco.get("n")
     if not foco.get("editable") or foco.get("secreto") or not n or n > len(elementos):
         return None
@@ -560,6 +620,9 @@ def verificar(objetivo, elementos, estado, historial, consultar, imagen=None):
                 "copias_observadas": estado.get('copias_observadas', []),
                 "memoria_tarea": estado.get('memoria_tarea', {}),
                 "acciones_ejecutadas": [str(h)[:240] for h in historial[-6:]]}
+    if estado.get('edicion_visual') and estado.get('percepcion_ocr') and not (estado.get('foco') or {}).get('editable'):
+        contexto['foco'] = {'disponible': False, 'motivo': 'UIA solo expone marco; observar foco en la imagen'}
+        contexto['foco_visual'] = estado.get('foco_visual', {})
     instruccion = ("Verify whether the ENTIRE user request is fulfilled using current observations. "
                    "History records attempted actions, not proof of success. Do not infer success from a click. "
                    "For writing, check the visible/focused field value. For navigation, check the current address/title. "

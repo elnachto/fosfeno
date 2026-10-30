@@ -19,7 +19,8 @@ def es_envio(accion, elementos, estado):
     nombre = ''
     if accion['tipo'] == 'clic':
         e = elementos[accion['n'] - 1]
-        if e[0].split(':')[-1] not in ('Button', 'SplitButton', 'MenuItem'):
+        if e[0].split(':')[-1] not in ('Button', 'SplitButton', 'MenuItem') and not (
+                e[0] == 'VisualText' and estado.get('edicion_visual')):
             return False
         nombre = e[1]
     elif accion['tipo'] == 'tecla':
@@ -135,7 +136,13 @@ def revisar(objetivo, accion, observacion, consultar, imagen, preparar_prompt):
     contexto['filas_observadas'] = [{'tabla': tabla, 'fila': n, 'celdas': v} for (tabla, n), v in filas.items()]
     schema = copy.deepcopy(ESQUEMA)
     schema['properties']['cita']['enum'] = list(dict.fromkeys(citas))[:180]
-    respuesta = consultar(INSTRUCCION, preparar_prompt(objetivo, contexto, None, None, None), schema, imagen)
+    instruccion = INSTRUCCION
+    if observacion.get('edicion_visual'):
+        instruccion += ('\nAn option visible in an OPEN dropdown is not proof of the current selected value. '
+                        'Require the requested value in the field itself after selection before allowing confirmation. '
+                        'When the desired destination is supplied but its current selection is empty or unverified, '
+                        'use corregir to inspect/select it rather than asking the user to supply the same destination again.')
+    respuesta = consultar(instruccion, preparar_prompt(objetivo, contexto, None, None, None), schema, imagen)
     if not isinstance(respuesta, dict) or respuesta.get('decision') not in ('permitir', 'corregir', 'preguntar'):
         raise ValueError('La revisión previa no devolvió una decisión válida; no confirmar todavía')
     decision = respuesta['decision']

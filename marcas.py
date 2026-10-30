@@ -433,6 +433,33 @@ def es_app_activa(nombre, titulo):
     return t == app or t.endswith(" - " + app) or t.startswith(app + " - ")
 
 
+def ventana_edicion_autorizada(hwnd):
+    """Vinculación explícita por HWND y título; admite sus diálogos propietarios."""
+    raiz = PERFIL.get('ventana_edicion_visual', 0)
+    titulo = PERFIL.get('titulo_edicion_visual', '')
+    if not PERFIL.get('edicion_visual') or not raiz or not titulo:
+        return False
+    propietario = hwnd
+    for _ in range(8):
+        if propietario == raiz:
+            buf = ctypes.create_unicode_buffer(1024)
+            ctypes.windll.user32.GetWindowTextW(ctypes.c_void_p(raiz), buf, len(buf))
+            return buf.value == titulo
+        propietario = int(ctypes.windll.user32.GetWindow(ctypes.c_void_p(propietario), 4) or 0)
+        if not propietario:
+            break
+    return False
+
+
+def validar_escritura_visual(accion, hwnd):
+    d = accion.get('_escritura_visual') or {}
+    return (d.get('revision_foco', {}).get('confirmado') is True and not d['revision_foco'].get('secreto')
+            and d.get('hwnd') == hwnd and d.get('raiz') == PERFIL.get('ventana_edicion_visual')
+            and 0 <= time.monotonic()-d.get('capturado_en', -1000) <= 90
+            and ventana_edicion_autorizada(hwnd)
+            and int(auto.GetForegroundControl().NativeWindowHandle) == hwnd)
+
+
 def reunir(ancho, alto, incluir_barra=True, imagen=None):
     TEXTO_UI.clear()
     DETALLES_UI.clear()
@@ -450,7 +477,8 @@ def reunir(ancho, alto, incluir_barra=True, imagen=None):
             ox, oy = MONITOR['left'], MONITOR['top']
             region = (max(0, r.left-ox), max(0, r.top-oy), min(ancho, r.right-ox), min(alto, r.bottom-oy))
             extra, detalles, parcial = percepcion_ocr.etiquetas(
-                imagen, region, int(top.NativeWindowHandle), (ox, oy))
+                imagen, region, int(top.NativeWindowHandle), (ox, oy),
+                limite=200 if ventana_edicion_autorizada(int(top.NativeWindowHandle)) else 120)
             elementos += extra
             DETALLES_UI.update(detalles)
             TEXTO_UI.extend(e[1] for e in extra)
@@ -468,6 +496,9 @@ def reunir(ancho, alto, incluir_barra=True, imagen=None):
     ESTADO_UI.update(capturar_estado(titulo, elementos, top))
     ESTADO_UI['captura_incompleta'] = truncado
     ESTADO_UI['percepcion_ocr'] = visual
+    ESTADO_UI['edicion_visual'] = bool(visual and ventana_edicion_autorizada(ESTADO_UI['hwnd']))
+    ESTADO_UI['raiz_edicion_visual'] = PERFIL.get('ventana_edicion_visual') if ESTADO_UI['edicion_visual'] else 0
+    ESTADO_UI['capturado_en'] = time.monotonic()
     if error_visual:
         ESTADO_UI['error_percepcion_ocr'] = error_visual
     return titulo, elementos, truncado
@@ -579,7 +610,8 @@ def validar_destino(elemento, hwnd=None):
         if tipo == 'VisualText':
             import percepcion_visual
             d = DETALLES_UI.get(elemento, {})
-            if d.get('revision_visual', {}).get('tipo') != 'navegacion' or not d.get('revision_visual', {}).get('coincide'):
+            tipos = ('navegacion', 'campo', 'confirmacion', 'desconocido') if ventana_edicion_autorizada(hwnd) else ('navegacion',)
+            if d.get('revision_visual', {}).get('tipo') not in tipos or not d.get('revision_visual', {}).get('coincide'):
                 return False
             imagen = grab()
             return percepcion_visual.anclaje_vigente(d.get('anclaje_visual'), imagen, hwnd,
@@ -815,7 +847,7 @@ def decidir_accion(objetivo, img, titulo, elementos, historial, ejemplos="", par
         if actual.get('percepcion_ocr'):
             import percepcion_ocr
             try:
-                percepcion_ocr.validar_tipo(accion)
+                percepcion_ocr.validar_tipo(accion, actual)
             except ValueError as error:
                 dato['rechazo_politica_visual'] = str(error)
                 accion = {'tipo': 'nada', '_evidencia': str(error)}

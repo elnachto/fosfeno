@@ -59,4 +59,10 @@ def cargar():
         raise ValueError("Motor de IA desconocido: " + str(elegido) + ". Usa " + ", ".join(PERFILES))
     perfil = dict(PERFILES[elegido])
     perfil['vision_experimental'] = os.environ.get('FOSFENO_VISION_EXPERIMENTAL', '') == '1'
+    perfil['edicion_visual'] = os.environ.get('FOSFENO_VISION_EDITAR', '') == '1'
+    try:
+        perfil['ventana_edicion_visual'] = int(os.environ.get('FOSFENO_VENTANA_LAB', '0'))
+    except ValueError:
+        perfil['ventana_edicion_visual'] = 0
+    perfil['titulo_edicion_visual'] = os.environ.get('FOSFENO_TITULO_LAB', '')
     return elegido, perfil

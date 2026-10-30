@@ -29,7 +29,7 @@ import tareas
 import uiautomation as auto
 
 CODIGO_AUDITADO = ('agente.py', 'marcas.py', 'jarvis.py', 'motor_ia.py',
-                   'percepcion_visual.py', 'percepcion_ocr.py', 'percepcion_win32.py', 'lectura_visual.py')
+                   'percepcion_visual.py', 'percepcion_ocr.py', 'percepcion_win32.py', 'lectura_visual.py', 'precondiciones.py')
 
 
 def main():
@@ -190,11 +190,20 @@ def main():
                         sesion['resultados'][-1]['destino_revalidado'] = vigente
                         self.guardar()
                         return self.responder({'vigente': vigente})
+                    if ruta == '/validar-escritura':
+                        actual = sesion.get('actual', {})
+                        if actual.get('accion', {}).get('tipo') != 'escribir':
+                            raise ValueError('No hay una escritura pendiente')
+                        vigente = marcas.validar_escritura_visual(actual['accion'], actual['estado']['hwnd'])
+                        sesion['resultados'][-1]['ventana_escritura_revalidada'] = vigente
+                        self.guardar()
+                        return self.responder({'vigente': vigente})
                     imagen, titulo, elementos, estado, truncado = self.observar()
                     if ruta == '/estado':
                         return self.responder({'estado': estado, 'elementos': elementos, 'truncado': truncado})
                     if ruta != '/paso':
                         raise ValueError('Ruta desconocida')
+                    imagen.save(args.salida / (sesion['id']+'-captura-'+str(len(sesion['resultados'])+1)+'.png'))
                     if 'actual' in sesion:
                         raise ValueError('La propuesta anterior todavía no se ha confirmado')
                     if len(sesion['historial']) >= agente.MAX_PASOS:
@@ -216,7 +225,7 @@ def main():
                                 preflight = {'tipo': 'preguntar', 'texto': preparada['pregunta'], '_origen': 'validacion_parametros'}
                     sesion['referencias_recuperadas'] = recetas
                     sesion['ejemplos_entregados'] = ejemplos
-                    accion = agente.continuar_pendiente(sesion['pendiente'], estado, elementos)
+                    accion = agente.continuar_pendiente(sesion['pendiente'], estado, elementos, imagen, marcas.preguntar_json)
                     sesion['pendiente'] = None
                     if accion:
                         crudo = 'Continuación de escritura con foco observado'

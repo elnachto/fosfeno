@@ -43,9 +43,11 @@ class FlujoTests(unittest.TestCase):
         self.assertIn('¿Cuál es la VLAN?', aviso.call_args.args[0])
         self.assertIsNone(jarvis.ESTADO['ultimo_resultado']['ruta'])
 
-    def ejecutar(self, carpeta, partes, propuestas, revisiones):
+    def ejecutar(self, carpeta, partes, propuestas, revisiones, estado_custom=None):
         estado = {'ventana': 'Nota de prueba', 'hwnd': 10, 'texto_visible': 'Cantidad: 83',
                   'foco': {'n': 1, 'editable': True, 'nombre': 'Texto', 'valor': 'Cantidad: 83'}}
+        if estado_custom is not None:
+            estado = estado_custom
         imagen = MagicMock(size=(500, 400))
         elementos = [('Edit', 'Texto', 0, 0, 400, 300)]
         escaneo = (imagen, 'Nota de prueba', elementos)
@@ -83,6 +85,19 @@ class FlujoTests(unittest.TestCase):
             self.assertEqual(prompts[2]['hechos_observados']['cantidad']['valor'], '83')
             self.assertIn('83', aviso.call_args.args[0])
             self.assertIn('Tarea comprobada', aviso.call_args.args[0])
+
+    def test_escritura_visual_vinculada_no_exige_foco_editable_uia(self):
+        estado = {'ventana': 'Formulario de laboratorio', 'hwnd': 10, 'texto_visible': '',
+                  'foco': {'n': None, 'editable': False, 'rol': 'Window'}}
+        propuestas = iter([{'tipo': 'escribir', 'texto': '192.168.50.61',
+                            '_escritura_visual': {'hwnd': 10}},
+                           {'tipo': 'preguntar', 'texto': 'Fin del doble de prueba'}])
+        with tempfile.TemporaryDirectory() as carpeta, \
+             patch.object(marcas, 'validar_escritura_visual', return_value=True), \
+             patch.object(jarvis.acciones, 'escribir', return_value=True) as escribir:
+            self.ejecutar(carpeta, ['Rellenar formulario'], propuestas, [], estado_custom=estado)
+            escribir.assert_called_once_with('192.168.50.61')
+        self.assertFalse(estado['foco']['editable'])
 
     def test_verificador_rechaza_primera_etapa_y_no_avanza(self):
         propuestas = iter([{'tipo': 'siguiente'}] * 3)

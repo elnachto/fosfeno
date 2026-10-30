@@ -23,8 +23,9 @@ Ese revisor de la primera ronda se sustituyó después por
 [lectura con referencias OCR y geometría](lectura-con-referencias.md): no basta
 un booleano de confianza. Se conservan los fallos y el alcance de cada ronda.
 
-El piloto bloquea escritura, teclado, desplazamiento, confirmaciones y cambios
-de configuración. También bloquea RECORDAR, IMPORTAR_PLAN y SIGUIENTE para
+Por defecto, el piloto bloquea escritura, teclado, desplazamiento, confirmaciones
+y cambios de configuración. La [variante de edición de laboratorio](edicion-visual-laboratorio.md)
+los habilita en una ventana vinculada. También bloquea RECORDAR, IMPORTAR_PLAN y SIGUIENTE para
 evitar guardar como aprendizaje relaciones visuales que aún interpreta mal.
 Con la opción experimental activa tampoco se guardan recetas automáticas de éxito.
 Los campos OCR no se declaran editables y no acreditan foco nativo.
@@ -96,5 +97,6 @@ comparar `--metodo rejilla` y `--metodo ocr` sobre la misma imagen y lista de
 objetivos JSON. Nunca pulsa ni escribe. Guarda las propuestas, imágenes revisadas,
 hashes y metadatos del servidor local. Las recetas no intervienen en esa medición.
 
-Lo siguiente es resolver tablas con columnas cortadas, paneles superpuestos,
-iconos sin texto y foco visual verificable antes de habilitar edición o aprendizaje.
+Quedan por resolver tablas con columnas cortadas, paneles superpuestos, iconos
+sin texto y comprobación fiable del foco. La revisión visual del foco añadida
+para el laboratorio puede equivocarse; no equivale a foco nativo verificado.
