@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-labelledby="title desc">
+<title id="title">Fosfeno</title>
+<desc id="desc">Local desktop assistant for Windows. A large white companion emerges from the last o through a liquid neck. Outfit 700 title is outlined. Static version.</desc>
+<metadata>Title outlines: Outfit Bold, weight 700. Source: Outfitio/Outfit-Fonts. Font license included below; no external font needed.
+Copyright 2021 The Outfit Project Authors (https://github.com/Outfitio/Outfit-Fonts)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+https://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION &amp; CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+</metadata>
+<defs>
+ <filter id="letters-goo" x="-5%" y="-20%" width="110%" height="140%" color-interpolation-filters="sRGB">
+  <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+  <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7" result="threshold" />
+  <feFlood flood-color="#16181D" result="ink" /><feComposite in="ink" in2="threshold" operator="in" />
+ </filter>
+ <filter id="white-goo" x="-15%" y="-25%" width="130%" height="150%" color-interpolation-filters="sRGB">
+  <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
+  <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7" result="threshold" />
+  <feFlood flood-color="#FFFFFF" result="white" /><feComposite in="white" in2="threshold" operator="in" />
+ </filter>
+ <filter id="shadow" x="-30%" y="-35%" width="160%" height="170%">
+  <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur" /><feOffset in="blur" dy="4" result="offset" />
+  <feFlood flood-color="#000000" flood-opacity=".24" result="color" />
+  <feComposite in="color" in2="offset" operator="in" result="shade" />
+  <feMerge><feMergeNode in="shade" /><feMergeNode in="SourceGraphic" /></feMerge>
+ </filter>
+ <filter id="travel-goo" x="-100%" y="-100%" width="300%" height="300%" color-interpolation-filters="sRGB">
+  <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
+  <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7" result="threshold" />
+  <feFlood flood-color="#16181D" result="color" /><feComposite in="color" in2="threshold" operator="in" />
+ </filter>
+</defs>
+<rect width="1280" height="320" fill="#F6F5F2" />
+<g id="wordmark" transform="translate(-3 0)">
+ <g id="title-outlines" fill="#16181D" filter="url(#letters-goo)" aria-label="Fosfeno">
+  <path d="M188.280,205.000 L188.280,56.740 L290.970,56.740 L290.970,85.090 L221.250,85.090 L221.250,118.480 L287.610,118.480 L287.610,146.830 L221.250,146.830 L221.250,205.000 L188.280,205.000" /><path d="M346.371,207.310 C335.871,207.310 326.386,204.965 317.916,200.275 C309.446,195.585 302.761,189.180 297.861,181.060 C292.961,172.940 290.511,163.840 290.511,153.760 C290.511,143.680 292.961,134.650 297.861,126.670 C302.761,118.690 309.411,112.355 317.811,107.665 C326.211,102.975 335.731,100.630 346.371,100.630 C356.871,100.630 366.356,102.940 374.826,107.560 C383.296,112.180 389.981,118.515 394.881,126.565 C399.781,134.615 402.231,143.680 402.231,153.760 C402.231,163.840 399.781,172.940 394.881,181.060 C389.981,189.180 383.331,195.585 374.931,200.275 C366.531,204.965 357.011,207.310 346.371,207.310 M346.371,178.120 C353.231,178.120 358.796,175.880 363.066,171.400 C367.336,166.920 369.471,161.040 369.471,153.760 C369.471,146.620 367.301,140.845 362.961,136.435 C358.621,132.025 353.091,129.820 346.371,129.820 C339.511,129.820 333.946,132.060 329.676,136.540 C325.406,141.020 323.271,146.830 323.271,153.970 C323.271,161.110 325.406,166.920 329.676,171.400 C333.946,175.880 339.511,178.120 346.371,178.120" /><path d="M443.354,207.520 C434.254,207.520 425.504,205.840 417.104,202.480 C408.704,199.120 401.914,194.500 396.734,188.620 L415.004,170.140 C422.004,177.840 431.034,181.690 442.094,181.690 C449.934,181.690 453.854,179.590 453.854,175.390 C453.854,172.870 452.629,170.945 450.179,169.615 C447.729,168.285 444.614,167.130 440.834,166.150 C437.054,165.170 433.064,164.015 428.864,162.685 C424.664,161.355 420.674,159.570 416.894,157.330 C413.114,155.090 410.034,152.010 407.654,148.090 C405.274,144.170 404.084,139.060 404.084,132.760 C404.084,123.100 407.759,115.225 415.109,109.135 C422.459,103.045 432.434,100.000 445.034,100.000 C453.714,100.000 461.729,101.505 469.079,104.515 C476.429,107.525 482.414,111.970 487.034,117.850 L468.764,136.330 C465.544,132.550 461.939,129.890 457.949,128.350 C453.959,126.810 450.074,126.040 446.294,126.040 C439.014,126.040 435.374,128.070 435.374,132.130 C435.374,134.370 436.564,136.085 438.944,137.275 C441.324,138.465 444.404,139.585 448.184,140.635 C451.964,141.685 455.954,142.875 460.154,144.205 C464.354,145.535 468.309,147.390 472.019,149.770 C475.729,152.150 478.809,155.370 481.259,159.430 C483.709,163.490 484.934,168.670 484.934,174.970 C484.934,185.050 481.189,192.995 473.699,198.805 C466.209,204.615 456.094,207.520 443.354,207.520" /><path d="M503.376,205.000 L503.376,130.240 L480.906,130.240 L480.906,102.940 L503.376,102.940 L503.376,94.120 C503.376,85.860 505.231,78.405 508.941,71.755 C512.651,65.105 517.866,59.855 524.586,56.005 C531.306,52.155 539.286,50.230 548.526,50.230 C555.526,50.230 561.616,51.385 566.796,53.695 C571.976,56.005 576.596,59.190 580.656,63.250 L560.496,83.410 C559.096,82.010 557.521,80.925 555.771,80.155 C554.021,79.385 551.956,79.000 549.576,79.000 C545.236,79.000 541.806,80.260 539.286,82.780 C536.766,85.300 535.506,88.730 535.506,93.070 L535.506,102.940 L564.906,102.940 L564.906,130.240 L535.506,130.240 L535.506,205.000 L503.376,205.000" /><path d="M620.302,207.310 C609.242,207.310 599.407,205.035 590.798,200.485 C582.188,195.935 575.432,189.635 570.532,181.585 C565.632,173.535 563.182,164.330 563.182,153.970 C563.182,143.750 565.597,134.650 570.427,126.670 C575.257,118.690 581.802,112.355 590.062,107.665 C598.322,102.975 607.632,100.630 617.992,100.630 C627.932,100.630 636.787,102.835 644.557,107.245 C652.327,111.655 658.417,117.675 662.827,125.305 C667.237,132.935 669.442,141.720 669.442,151.660 C669.442,155.440 668.952,159.710 667.972,164.470 L594.892,164.680 C596.572,170.420 599.582,174.830 603.922,177.910 C608.262,180.990 613.652,182.530 620.092,182.530 C630.312,182.530 638.432,179.030 644.452,172.030 L662.092,189.670 C657.052,195.550 650.962,199.960 643.822,202.900 C636.682,205.840 628.842,207.310 620.302,207.310 M618.202,125.200 C612.322,125.200 607.352,126.740 603.292,129.820 C599.232,132.900 596.432,137.170 594.892,142.630 L639.412,142.420 C636.753,130.940 629.682,125.200 618.202,125.200" /><path d="M672.981,205.000 L672.981,102.940 L705.111,102.940 L705.111,111.130 C712.671,104.270 722.191,100.840 733.671,100.840 C741.091,100.840 747.741,102.625 753.621,106.195 C759.501,109.765 764.121,114.490 767.481,120.370 C770.841,126.250 772.521,132.690 772.521,139.690 L772.521,205.000 L740.391,205.000 L740.391,146.830 C740.391,141.510 738.746,137.205 735.456,133.915 C732.166,130.625 728.001,128.980 722.961,128.980 C717.781,128.980 713.511,130.625 710.151,133.915 C706.791,137.205 705.111,141.510 705.111,146.830 L705.111,205.000 L672.981,205.000" /><path d="M830.230,207.310 C819.730,207.310 810.245,204.965 801.775,200.275 C793.305,195.585 786.620,189.180 781.720,181.060 C776.820,172.940 774.370,163.840 774.370,153.760 C774.370,143.680 776.820,134.650 781.720,126.670 C786.620,118.690 793.270,112.355 801.670,107.665 C810.070,102.975 819.590,100.630 830.230,100.630 C840.730,100.630 850.215,102.940 858.685,107.560 C867.155,112.180 873.840,118.515 878.740,126.565 C883.640,134.615 886.090,143.680 886.090,153.760 C886.090,163.840 883.640,172.940 878.740,181.060 C873.840,189.180 867.190,195.585 858.790,200.275 C850.390,204.965 840.870,207.310 830.230,207.310 M830.230,178.120 C837.090,178.120 842.655,175.880 846.925,171.400 C851.195,166.920 853.330,161.040 853.330,153.760 C853.330,146.620 851.160,140.845 846.820,136.435 C842.480,132.025 836.950,129.820 830.230,129.820 C823.370,129.820 817.805,132.060 813.535,136.540 C809.265,141.020 807.130,146.830 807.130,153.970 C807.130,161.110 809.265,166.920 813.535,171.400 C817.805,175.880 823.370,178.120 830.230,178.120" />
+  </g>
+ <g filter="url(#shadow)">
+  <g fill="#FFFFFF" filter="url(#white-goo)">
+   <path id="liquid-neck" d="M878 152 C908 165 923 143 956 135 C965 134 970 141 973 152 C937 155 917 183 883 183 C878 178 876 164 878 152Z" />
+   <ellipse cx="1024" cy="122" rx="73" ry="70" />
+   <circle cx="1065" cy="80" r="25" />
+  </g>
+ </g>
+ <g id="eyes" fill="#16181D">
+  <circle cx="996" cy="118" r="13.5" />
+  <circle cx="1052" cy="118" r="13.5" />
+ </g>
+ 
+</g>
+<g font-family="Segoe UI, Arial, sans-serif" text-anchor="middle">
+ <text x="640" y="255" fill="#686E78" font-size="22">Local desktop assistant for Windows.</text>
+ <text x="640" y="287" fill="#C58A24" font-size="18">100% local. No API key.</text>
+</g>
+</svg>
