@@ -190,6 +190,9 @@ def ejecutar_caso(caso, motor, semilla, max_pasos=14, referencias=None):
                 feedback = ""
                 registro = {"numero": numero + 1, "accion": accion, "estado": copy.deepcopy(estado), "tiempos": medicion}
                 pasos.append(registro)
+                if accion['tipo'] == 'nada' and not historial:
+                    resultado['motivo'] = 'no pudo continuar; sin efectos pendientes de verificar'
+                    break
                 if accion["tipo"] in ("listo", "nada"):
                     verificacion = agente.verificar(caso["objetivo"], elementos, estado, historial, marcas.preguntar_json)
                     registro["verificacion"] = verificacion

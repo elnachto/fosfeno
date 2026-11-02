@@ -444,7 +444,7 @@ def _ejecutar_tarea(objetivo, escaneo, sello, tarea):
                     estado_actual['copias_observadas'] = marcas.evidencia_copias(objetivo, traza)
                 print("Paso", paso, "->", tipo, "(modelo:", round(seg, 1), "s)")
                 verificacion_previa = None
-                if tipo == "nada" and marcas.PERFIL.get("agente_estado"):
+                if tipo == "nada" and marcas.PERFIL.get("agente_estado") and historial:
                     verificacion_previa = agente.verificar(objetivo, elementos, estado_actual, historial, marcas.preguntar_json, img)
                     if agente.final_confirmado(verificacion_previa):
                         tipo = "listo"
@@ -554,6 +554,12 @@ def _ejecutar_tarea(objetivo, escaneo, sello, tarea):
                             time.sleep(0.15)
                     if not marcas.validar_destino(elemento, estado_actual.get("hwnd")):
                         feedback = "El control cambió después de observarlo. Identifica de nuevo el destino en la pantalla actual."
+                        bloqueado = agente.registrar_intento_fallido(accion, elementos, estado_actual, traza, feedback)
+                        log.write('INTENTO_RECHAZADO: ' + json.dumps(traza[-1], ensure_ascii=False) + '\n')
+                        if bloqueado:
+                            tarea.terminar('incompleta', 'Dos intentos sobre el mismo destino fueron rechazados sin progreso.')
+                            avisar('El destino no se pudo validar. Me detuve antes de repetirlo otra vez.', expresion='confundido')
+                            return
                         anterior = None
                         continue
                     if not acciones.mover_suave(punto[0], punto[1]):
@@ -572,6 +578,10 @@ def _ejecutar_tarea(objetivo, escaneo, sello, tarea):
                         if not marcas.validar_escritura_visual(accion, actual.get('hwnd')):
                             feedback = 'La escritura visual perdió su ventana de laboratorio o la captura caducó.'
                             continue
+                    elif accion.get('_entrada_teclado_directa'):
+                        if not marcas.validar_entrada_directa(accion, actual):
+                            tarea.terminar('incompleta', 'La entrada directa perdió la ventana o el texto permitido.')
+                            return
                     elif marcas.PERFIL.get("agente_estado"):
                         foco = actual.get("foco", {})
                         elegido = estado_actual.get("foco", {})
@@ -585,8 +595,11 @@ def _ejecutar_tarea(objetivo, escaneo, sello, tarea):
                         avisar("Cancelado.")
                         return
                     comprobado = marcas.capturar_estado(marcas.nombre_ventana(), elementos)
-                    if (estado_actual.get("hwnd") and comprobado.get("hwnd") != estado_actual["hwnd"]) or (not accion.get('_escritura_visual') and comprobado.get("foco", {}).get("n") != actual.get("foco", {}).get("n")):
+                    if (estado_actual.get("hwnd") and comprobado.get("hwnd") != estado_actual["hwnd"]) or (not accion.get('_escritura_visual') and not accion.get('_entrada_teclado_directa') and comprobado.get("foco", {}).get("n") != actual.get("foco", {}).get("n")):
                         avisar("Cambió el foco antes de escribir. Me detuve.", expresion="confundido")
+                        return
+                    if accion.get('_entrada_teclado_directa') and not marcas.validar_entrada_directa(accion, comprobado):
+                        tarea.terminar('incompleta', 'La ventana cambió antes de la entrada directa.')
                         return
                     control("escribir")
                     if accion.get("reemplazar"):
@@ -745,6 +758,7 @@ def responder(texto, escaneo):
 
 
 def guiar(texto, escaneo, sello, inicio):
+    ESTADO['pendiente'] = None
     img, titulo, elementos = escaneo
     if not elementos:
         avisar("No puedo ver los botones de esa ventana todavía", expresion="confundido")
@@ -765,12 +779,47 @@ def guiar(texto, escaneo, sello, inicio):
     rect = (elemento[2], elemento[3], elemento[4], elemento[5])
     texto_senal = etiqueta(elemento) + "  ·  ¿lo hago? Ctrl+Alt+" + LETRAS["actuar"]
     if mostrar_elemento(elemento, punto, rect, SEGUNDOS_SENAL, texto_senal):
-        ESTADO["pendiente"] = {"texto": texto, "hasta": time.time() + OFERTA_SEGUNDOS}
+        ESTADO["pendiente"] = {"texto": texto, "hasta": time.time() + OFERTA_SEGUNDOS,
+                               'elemento': tuple(elemento), 'hwnd': marcas.ESTADO_UI.get('hwnd'),
+                               'ventana': titulo}
         print("Si quieres que lo haga yo, pulsa Ctrl+Alt+" + LETRAS["actuar"] + " en los próximos " + str(OFERTA_SEGUNDOS) + " s.")
     else:
         ruta = os.path.join(marcas.OUT, "resultado_jarvis_" + sello + ".png")
         final.save(ruta)
         print("Señal guardada en:", ruta)
+
+
+def ejecutar_guia(pendiente):
+    ESTADO['pendiente'] = None
+    if not pendiente or time.time() >= pendiente.get('hasta', 0) or not pendiente.get('hwnd'):
+        avisar('La guía caducó. Vuelve a señalar el paso.', expresion='confundido')
+        return False
+    img, titulo, elementos = escanear()
+    if marcas.ESTADO_UI.get('hwnd') != pendiente['hwnd']:
+        avisar('La ventana de la guía cambió. Vuelve a señalar el paso.', expresion='confundido')
+        return False
+    origen = pendiente['elemento']
+    candidatas = [e for e in elementos if agente.clave_elemento(e) == agente.clave_elemento(origen)]
+    if len(candidatas) > 1:
+        candidatas = [e for e in candidatas if tuple(e[2:]) == tuple(origen[2:])]
+    if len(candidatas) != 1:
+        avisar('El control señalado ya no se puede identificar. Vuelve a pedir la guía.', expresion='confundido')
+        return False
+    elemento = candidatas[0]
+    rect = tuple(elemento[2:])
+    punto = ((rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2)
+    mostrar_elemento(elemento, punto, rect, CUENTA_ATRAS + .5, 'Solo este paso: ' + etiqueta(elemento))
+    if esperar_cancelacion(CUENTA_ATRAS) or not marcas.validar_destino(elemento, pendiente['hwnd']):
+        capa.enviar(cmd='limpiar')
+        avisar('Paso cancelado o control cambiado.', expresion='confundido')
+        return False
+    if not acciones.mover_suave(*punto) or not marcas.validar_destino(elemento, pendiente['hwnd']):
+        return False
+    hecho = acciones.clic(*punto)
+    capa.enviar(cmd='limpiar')
+    capa.enviar(cmd='estado', valor='idle')
+    avisar('Paso señalado ejecutado.' if hecho else 'Paso cancelado.')
+    return hecho
 
 
 def explorar(escaneo, app, sello):
@@ -948,6 +997,12 @@ def modo_texto(letra, letra_actuar, actuar_ok):
             capa.enviar(cmd="estado", valor="pensando")
             print("Dijiste:", texto, "(modo acción)" if modo_actuar else "")
             procesar_texto(texto, modo_actuar)
+            oferta = ESTADO.get('pendiente')
+            if oferta and not modo_actuar:
+                decision = esperar_decision(max(0, oferta['hasta'] - time.time()))
+                ESTADO['pendiente'] = None
+                if decision == ID_ACTUAR:
+                    ejecutar_guia(oferta)
             capa.enviar(cmd="estado", valor="idle")
             print("Listo.")
     except (KeyboardInterrupt, EOFError):
@@ -1012,7 +1067,7 @@ def main():
                 capa.enviar(cmd="limpiar")
                 capa.enviar(cmd="estado", valor="pensando")
                 print("Lo hago yo:", pendiente["texto"])
-                procesar_texto(pendiente["texto"], True)
+                ejecutar_guia(pendiente)
                 print("Listo.")
                 continue
             winsound.Beep(880, 120)

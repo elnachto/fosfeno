@@ -1,0 +1,10 @@
+[
+  {"archivo": "word.md", "clases": ["OpusApp"]},
+  {"archivo": "escritorio.md", "clases": ["Progman", "WorkerW"]},
+  {
+    "archivo": "calculadora.md",
+    "clases": ["ApplicationFrameWindow", "Windows.UI.Core.CoreWindow", "CalcFrame", "WinUIDesktopWin32WindowClass"],
+    "titulos": ["Calculadora", "Calculator"],
+    "entrada_teclado_directa": "[0-9()+*/., -]{1,80}"
+  }
+]

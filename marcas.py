@@ -243,13 +243,32 @@ def cargar_notas(titulo):
         return ""
 
 
+def perfil_aplicacion(estado):
+    try:
+        perfiles = json.loads((Path(BASE) / 'ayudas_aplicacion' / 'ventanas.json').read_text(encoding='utf-8'))
+        clase = estado.get('clase_aplicacion', estado.get('clase_ventana'))
+        titulo = estado.get('ventana_aplicacion', estado.get('ventana', ''))
+        return next((p for p in perfiles if clase in p['clases']
+                     and (not p.get('titulos') or titulo in p['titulos'])), {})
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+
+
 def ayuda_aplicacion(estado):
-    if estado.get('clase_aplicacion', estado.get('clase_ventana')) != 'OpusApp':
+    archivo = perfil_aplicacion(estado).get('archivo', '')
+    if not archivo or Path(archivo).name != archivo:
         return ''
     try:
-        return (Path(BASE) / 'ayudas_aplicacion' / 'word.md').read_text(encoding='utf-8')[:2400]
+        return (Path(BASE) / 'ayudas_aplicacion' / archivo).read_text(encoding='utf-8')[:2400]
     except OSError:
         return ''
+
+
+def validar_entrada_directa(accion, estado):
+    patron = perfil_aplicacion(estado).get('entrada_teclado_directa')
+    return bool(patron and accion.get('_entrada_teclado_directa') == estado.get('hwnd')
+                and not (estado.get('foco') or {}).get('secreto')
+                and re.fullmatch(patron, accion.get('texto', '')))
 
 
 def contexto_aplicacion(hwnd, clase, titulo):
@@ -833,6 +852,7 @@ def decidir_accion(objetivo, img, titulo, elementos, historial, ejemplos="", par
         inicio = time.monotonic()
         actual = dict(ESTADO_UI if estado is None else estado)
         actual["ventana"] = titulo
+        actual['entrada_teclado_directa'] = perfil_aplicacion(actual).get('entrada_teclado_directa', '')
         if 'archivos_observados' not in actual:
             actual['archivos_observados'] = evidencia_archivos(objetivo)
         if 'copias_observadas' not in actual:

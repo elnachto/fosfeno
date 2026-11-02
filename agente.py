@@ -69,9 +69,16 @@ def clave_accion(accion, elementos):
 
 
 def repetida_sin_progreso(accion, elementos, traza):
+    if accion['tipo'] == 'decir':
+        texto = normalizar(accion.get('texto', '')).strip()
+        return any(p.get('clave') == repr(clave_accion(accion, elementos))
+                   or p.get('evento', {}).get('tipo') == 'decir'
+                   and normalizar(p['evento'].get('texto', '')).strip() == texto for p in (traza or []))
     if not traza or traza[-1].get("clave") != repr(clave_accion(accion, elementos)):
         return False
     if accion["tipo"] == "esperar":
+        return False
+    if traza[-1].get('intento_fallido'):
         return False
     if accion["tipo"] in ("tecla", "desplazar"):
         return not traza[-1].get("resultado", {}).get("cambio_observable", False)
@@ -91,7 +98,8 @@ def huella(estado, elementos):
 
 
 def firma_operativa(accion, elementos, estado):
-    foco = {k: v for k, v in (estado.get('foco') or {}).items() if k not in ('n', 'rect', 'coincidencia')}
+    foco = {k: v for k, v in (estado.get('foco') or {}).items()
+            if k in ('nombre', 'rol', 'editable', 'secreto', 'valor', 'seleccion')}
     detalles = estado.get('detalles', {})
     destino = detalles.get(str(accion.get('n')), {})
     dato = {'ventana': estado.get('ventana'), 'foco': foco,
@@ -107,6 +115,84 @@ def ciclo_sin_progreso(accion, elementos, estado, traza):
         return False
     clave, firma = repr(clave_accion(accion, elementos)), firma_operativa(accion, elementos, estado)
     return sum(p.get('clave') == clave and p.get('firma_operativa', p.get('huella')) == firma for p in (traza or [])[-10:]) >= 2
+
+
+def registrar_intento_fallido(accion, elementos, estado, traza, motivo):
+    traza.append({'clave': repr(clave_accion(accion, elementos)),
+                  'firma_operativa': firma_operativa(accion, elementos, estado),
+                  'intento_fallido': True, 'accion': 'Acción no ejecutada: ' + motivo,
+                  'resultado': {'cambio_observable': False, 'no_ejecutado': True}})
+    return ciclo_sin_progreso(accion, elementos, estado, traza)
+
+
+def apertura_sin_control(objetivo, elementos, estado, historial, traza):
+    if historial or traza or not estado.get('hwnd') or estado.get('percepcion_ocr') or estado.get('edicion_visual'):
+        return None
+    pedido = re.match(r'^\s*(?:por favor[, ]+)?(?:abre|abrir|inicia|iniciar|lanza|lanzar|open|launch)\s+'
+                      r'(?:(?:la aplicaci[oó]n|el programa|la app|the application|the app)\s+)?(.+)', objetivo, re.I)
+    if not pedido:
+        return None
+    nombre = re.split(r'\s+(?:y|luego|despu[eé]s|para|and|then)\s+', pedido[1], maxsplit=1, flags=re.I)[0].strip(' .!?')
+    if (not re.fullmatch(r'[^\W_][\w -]{0,79}', nombre, re.UNICODE)
+            or re.match(r'^(?:(?:el|la|los|las|un|una|the|a)\s+)?(?:men[uú]|pesta[nñ]a|archivo|carpeta|documento|ventana|enlace|vista|secci[oó]n|opci[oó]n|panel|menu|tab|file|folder|document|window|link|view|section|option|dialog)\b', nombre, re.I)):
+        return None
+    nombre = re.sub(r'^(?:el|la|the)\s+', '', nombre, flags=re.I)
+    clave = normalizar(nombre)
+    ventana = normalizar(estado.get('ventana', ''))
+    if ventana == clave or ventana.endswith(' - ' + clave):
+        return None
+    if any(clave in normalizar(e[1]) for e in elementos if e[0].split(':')[-1] in ('Button', 'ListItem', 'MenuItem', 'Hyperlink')):
+        return None
+    return {'tipo': 'tecla', 'tecla': 'win', '_objetivo': 'Abrir ' + nombre,
+            '_evidencia': 'No hay un control observado para abrir la aplicación; iniciar su búsqueda.',
+            '_apertura_aplicacion': nombre, '_fase_apertura': 'inicio', '_ventana_apertura': estado['hwnd']}
+
+
+def continuar_apertura(elementos, estado, traza):
+    etapas = [p for p in (traza or []) if p.get('evento', {}).get('apertura_aplicacion')]
+    if not etapas:
+        return None
+    ruta = etapas[-1]['evento']['apertura_aplicacion']
+    nombre = ruta['nombre']
+    coincide = lambda titulo: normalizar(titulo).strip() == normalizar(nombre) or normalizar(titulo).endswith(' - ' + normalizar(nombre))
+    if any(coincide(p.get('resultado', {}).get('ventana', '')) for p in etapas):
+        return None
+    if coincide(estado.get('ventana', '')) and estado.get('hwnd') != ruta['ventana_origen']:
+        return None
+    meta = {'_apertura_aplicacion': nombre, '_fase_apertura': ruta['fase'],
+            '_ventana_apertura': ruta['ventana_origen'], '_objetivo': 'Abrir ' + nombre}
+    esperas = sum(p['evento']['apertura_aplicacion']['fase'] == ruta['fase']
+                  and p['evento'].get('tipo') == 'esperar' for p in etapas)
+    if esperas >= 5:
+        return {'tipo': 'nada', '_evidencia': 'No se observó el buscador o la ventana solicitada después de esperar.'}
+    espera = {**meta, 'tipo': 'esperar', '_evidencia': 'Esperar a observar el buscador, el resultado o la ventana solicitada.'}
+    buscador = normalizar(estado.get('ventana', '')).strip() in (
+        'inicio', 'busqueda', 'start', 'search', 'busqueda de windows', 'windows search')
+    if not buscador or estado.get('hwnd') == ruta['ventana_origen']:
+        return espera
+    campos = [(n, e) for n, e in enumerate(elementos, 1) if es_editable(e[0])
+              and re.search(r'\b(buscar|busqueda|search)\b', normalizar(e[1]))]
+    if len(campos) != 1 or ruta['fase'] == 'ventana':
+        return espera
+    n, campo = campos[0]
+    foco = estado.get('foco') or {}
+    if ruta['fase'] == 'inicio':
+        if foco.get('n') != n:
+            return {**meta, 'tipo': 'clic', 'n': n, '_evidencia': 'Enfocar el campo observado de búsqueda de aplicaciones.'}
+        if not foco.get('editable') or foco.get('secreto'):
+            return espera
+        return {**meta, 'tipo': 'escribir', 'n': n, 'texto': nombre, 'reemplazar': True,
+                '_fase_apertura': 'nombre', '_evidencia': 'Campo de búsqueda observado y enfocado.'}
+    valor = estado.get('detalles', {}).get(str(n), {}).get('valor', foco.get('valor', '') if foco.get('n') == n else '')
+    resultados = [e for e in elementos if e[0].split(':')[-1] in ('Button', 'ListItem')
+                  and (normalizar(e[1]) == normalizar(nombre)
+                       or normalizar(e[1]).startswith(normalizar(nombre) + ', aplicacion'))]
+    if normalizar(valor).strip() != normalizar(nombre) or len(resultados) != 1:
+        return espera
+    if foco.get('n') != n:
+        return {**meta, 'tipo': 'clic', 'n': n, '_evidencia': 'Reenfocar la consulta observada antes de abrir su resultado.'}
+    return {**meta, 'tipo': 'tecla', 'tecla': 'enter', '_fase_apertura': 'ventana',
+            '_evidencia': 'Consulta y resultado de aplicación coinciden con el nombre solicitado.'}
 
 
 def esquema(total):
@@ -192,12 +278,17 @@ def evento_accion(accion, elementos, estado):
     tipo = accion['tipo']
     evento = {'tipo': tipo, 'ventana': estado.get('ventana', ''),
               'foco_antes': (estado.get('foco') or {}).get('nombre', '')}
+    if accion.get('_apertura_aplicacion'):
+        evento['apertura_aplicacion'] = {'nombre': accion['_apertura_aplicacion'],
+            'fase': accion['_fase_apertura'], 'ventana_origen': accion['_ventana_apertura']}
     if precondiciones.es_envio(accion, elementos, estado):
         evento['envio_formulario'] = precondiciones.firma_formulario(elementos, estado)
     if tipo == 'clic':
         evento['control'] = elementos[accion['n'] - 1][1]
     elif tipo == 'tecla':
         evento['tecla'] = accion['tecla']
+    elif tipo == 'decir':
+        evento['texto'] = accion['texto']
     operacion = normalizar(evento.get('control', ''))
     if operacion in ('copiar', 'copy', 'pegar', 'paste') or evento.get('tecla') in ('ctrl+c', 'ctrl+v'):
         evento['operacion'] = 'copiar' if operacion in ('copiar', 'copy') or evento.get('tecla') == 'ctrl+c' else 'pegar'
@@ -260,7 +351,9 @@ eventos_recientes records the window and focused control BEFORE each executed ac
 Use observed seleccionado flags as evidence. For adjacent desired items use Shift+Down/Up to extend selection; Ctrl+Space toggles an item and Ctrl+Down/Up moves focus without clearing selection.
 CLIC: n is an id in the current controls. ESCRIBIR: texto is literal text and n is its target input id.
 The executor will focus that input before typing. Use n=0 only if the correct input already has focus.
+When entrada_teclado_directa is available, ESCRIBIR n=0 can enter its permitted text directly in that window without an editable control; do not replace contents in this mode.
 TECLA: texto is a keyboard shortcut such as ctrl+l, ctrl+t, enter, tab, ctrl+s.
+To open a requested application with no observed launch control, use TECLA win, ESCRIBIR its name in the observed search field, then TECLA enter on the observed application result. Wait for its window before continuing. Search only for the requested application name, not commands, paths or URLs.
 DESPLAZAR: texto is abajo or arriba. ESPERAR: wait for loading. DECIR: report observed facts.
 DESPLAZAR only scrolls the view; it does not move the text cursor or select a paragraph. Use keyboard navigation to move the insertion point.
 LISTO: the ENTIRE request is visibly fulfilled; evidence must cite an observation. A click alone is not success.
@@ -416,6 +509,9 @@ def prompt_acotado(objetivo, observacion, referencias, partes, problemas):
 def proponer(objetivo, elementos, estado, historial, consultar, normalizar_tecla,
              imagen=None, traza=None, feedback="", referencias=None, partes=None, tarea=None):
     precondiciones.observar_resultado(traza, estado)
+    apertura = continuar_apertura(elementos, estado, traza) or apertura_sin_control(objetivo, elementos, estado, historial, traza)
+    if apertura and (tarea is None or not tarea.lectura_activa()):
+        return apertura, {'origen': 'controlador', 'accion': 'TECLA', 'texto': 'win'}, 0
     if tarea is not None:
         plan = tarea.plan_breve_observado(estado)
         if plan:
@@ -437,6 +533,7 @@ def proponer(objetivo, elementos, estado, historial, consultar, normalizar_tecla
         "ventana": estado.get("ventana", ""), "foco": foco,
         'solo_marco_accesible': solo_marco,
         'edicion_visual': bool(estado.get('edicion_visual')),
+        'entrada_teclado_directa': bool(estado.get('entrada_teclado_directa')),
         'captura_incompleta': bool(estado.get('captura_incompleta')),
         'archivos_observados': estado.get('archivos_observados', []),
         'copias_observadas': estado.get('copias_observadas', []),
@@ -512,7 +609,13 @@ def proponer(objetivo, elementos, estado, historial, consultar, normalizar_tecla
             validar_reemplazo(accion, objetivo, estado)
             accion = ampliar_seleccion_adyacente(accion, objetivo, elementos, estado)
             accion = abrir_destino_antes_de_pegar(accion, objetivo, elementos, estado)
-            if accion["tipo"] == "escribir" and not accion.get('_escritura_visual'):
+            if (accion['tipo'] == 'escribir' and not accion.get('n')
+                    and estado.get('entrada_teclado_directa') and not accion.get('_escritura_visual')):
+                if (accion.get('reemplazar') or foco.get('secreto') or not estado.get('hwnd')
+                        or not re.fullmatch(estado['entrada_teclado_directa'], accion['texto'])):
+                    raise ValueError('La entrada directa no admite ese texto o no conserva su ventana')
+                accion['_entrada_teclado_directa'] = estado['hwnd']
+            if accion["tipo"] == "escribir" and not accion.get('_escritura_visual') and not accion.get('_entrada_teclado_directa'):
                 destino = accion.get("n") or foco.get("n")
                 if destino and estado.get('detalles', {}).get(str(destino), {}).get('solo_lectura'):
                     raise ValueError('El campo observado es de solo lectura')

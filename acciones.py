@@ -8,6 +8,7 @@ user32 = ctypes.windll.user32
 KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_UNICODE = 0x0004
 TECLAS = {
+    "win": 0x5B,
     "enter": 0x0D,
     "tab": 0x09,
     "esc": 0x1B,

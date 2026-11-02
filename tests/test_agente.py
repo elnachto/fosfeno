@@ -20,6 +20,15 @@ def respuesta(accion, n=0, texto=''):
 
 
 class AgenteTests(unittest.TestCase):
+    def test_tecla_windows_sola_es_valida_para_buscar_aplicaciones(self):
+        self.assertEqual(acciones.normalizar_tecla('Win'), 'win')
+        self.assertEqual(acciones.normalizar_tecla('Windows'), 'win')
+        eventos = []
+        with patch.object(acciones, 'esc_presionado', return_value=False), \
+             patch.object(acciones, 'enviar', side_effect=lambda *args: eventos.append(args)):
+            self.assertTrue(acciones.tecla('win'))
+        self.assertEqual(eventos, [(0x5B, 0, 0), (0x5B, 0, acciones.KEYEVENTF_KEYUP)])
+
     def test_marco_se_identifica_por_jerarquia_no_por_nombre_sistema(self):
         titulo = SimpleNamespace(ControlTypeName='TitleBarControl')
         menu_so = SimpleNamespace(ControlTypeName='MenuBarControl', GetParentControl=lambda: titulo)
@@ -273,6 +282,21 @@ class AgenteTests(unittest.TestCase):
         estado = {'ventana': 'Documento', 'foco': {'nombre': 'Documento', 'valor': 'Texto'}}
         self.assertEqual(agente.firma_operativa(accion, ELEMENTOS, estado),
                          agente.firma_operativa(accion, ELEMENTOS + [('Button', 'Tooltip variable', 0, 300, 100, 330)], estado))
+
+    def test_documento_raiz_rechazado_corta_tercer_intento_aunque_cambie_el_cursor(self):
+        elementos = [('Document', 'Untitled-1 - Visual Studio Code', 961, 0, 1919, 1031),
+                     ('TabItem', 'Untitled-1', 1000, 30, 1150, 60)]
+        accion = {'tipo': 'clic', 'n': 1}
+        estado = {'ventana': 'Untitled-1 - Visual Studio Code', 'foco': {
+            'nombre': 'Untitled-1', 'rol': 'TabItem', 'editable': False,
+            'cursor_parrafo': 1, 'coincidencia': 'rectangulo_y_rol'}}
+        traza = []
+        self.assertFalse(agente.registrar_intento_fallido(accion, elementos, estado, traza, 'Destino no validado'))
+        estado['foco'].update(cursor_parrafo=2, coincidencia='otra_captura', formato_documento={'peso_fuente': 400})
+        self.assertFalse(agente.repetida_sin_progreso(accion, elementos, traza))
+        self.assertTrue(agente.registrar_intento_fallido(accion, elementos, estado, traza, 'Destino no validado'))
+        self.assertTrue(agente.ciclo_sin_progreso(accion, elementos, estado, traza))
+        self.assertTrue(all(p['resultado']['no_ejecutado'] for p in traza))
 
     def test_timeout_de_captura_se_declara_incompleto(self):
         with patch.object(marcas.auto, 'WalkControl', return_value=[(object(), 1)]), patch.object(marcas.time, 'time', side_effect=[0, 4]):

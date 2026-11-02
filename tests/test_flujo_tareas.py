@@ -145,6 +145,41 @@ class FlujoTests(unittest.TestCase):
             self.assertEqual(resultado['estado'], 'requiere_datos')
             self.assertIn('¿Cuál es la VLAN?', aviso.call_args.args[0])
 
+    def test_destino_rechazado_se_registra_y_no_llega_al_tercer_intento(self):
+        propuestas = iter([{'tipo': 'clic', 'n': 1}] * 7)
+        with tempfile.TemporaryDirectory() as carpeta, \
+             patch.object(jarvis.marcas, 'validar_destino', return_value=False) as validar:
+            resultado, prompts, _ = self.ejecutar(carpeta, [], propuestas, [])
+            self.assertEqual(validar.call_count, 2)
+            self.assertEqual(len(prompts), 2)
+            self.assertEqual(resultado['estado'], 'incompleta')
+            self.assertIn('Dos intentos', resultado['motivo'])
+
+    def test_nada_inicial_no_consulta_al_verificador(self):
+        with tempfile.TemporaryDirectory() as carpeta:
+            resultado, prompts, _ = self.ejecutar(carpeta, [], iter([{'tipo': 'nada'}]), [])
+            self.assertEqual(len(prompts), 1)
+            self.assertEqual(resultado['estado'], 'incompleta')
+
+    def test_entrada_directa_permite_operacion_sin_foco_editable(self):
+        estado = {'ventana': 'Calculadora', 'clase_ventana': 'ApplicationFrameWindow', 'hwnd': 10,
+                  'foco': {'n': None, 'nombre': '', 'editable': False}}
+        propuestas = iter([{'tipo': 'escribir', 'texto': '125*8', '_entrada_teclado_directa': 10},
+                           {'tipo': 'preguntar', 'texto': 'Fin del doble'}])
+        with tempfile.TemporaryDirectory() as carpeta, \
+             patch.object(jarvis.acciones, 'escribir', return_value=True) as escribir:
+            self.ejecutar(carpeta, [], propuestas, [], estado_custom=estado)
+        escribir.assert_called_once_with('125*8')
+
+    def test_entrada_directa_perdida_no_escribe_en_otra_ventana(self):
+        estado = {'ventana': 'Calculadora', 'clase_ventana': 'ApplicationFrameWindow', 'hwnd': 10,
+                  'foco': {'n': None, 'nombre': '', 'editable': False}}
+        propuestas = iter([{'tipo': 'escribir', 'texto': '125*8', '_entrada_teclado_directa': 11}])
+        with tempfile.TemporaryDirectory() as carpeta, \
+             patch.object(jarvis.acciones, 'escribir', side_effect=AssertionError('No debe escribir')):
+            resultado, _, _ = self.ejecutar(carpeta, [], propuestas, [], estado_custom=estado)
+            self.assertEqual(resultado['estado'], 'incompleta')
+
 
 if __name__ == '__main__':
     unittest.main()
