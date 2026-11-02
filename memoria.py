@@ -135,11 +135,15 @@ def guardar_mapa(app, mapa):
     return ruta
 
 
-def guardar_receta(app, objetivo, pasos, fuente, crudos=None):
+def guardar_receta(app, objetivo, pasos, fuente, crudos=None, demostracion_visual=None, conocimiento=None):
     os.makedirs(CONOCIMIENTO, exist_ok=True)
     dato = {"app": app, "objetivo": objetivo.strip(), "pasos": list(pasos), "fuente": fuente, "fecha": time.strftime("%Y-%m-%d %H:%M")}
     if crudos is not None and list(crudos) != list(pasos):
         dato["crudos"] = list(crudos)
+    if demostracion_visual:
+        dato['demostracion_visual'] = str(demostracion_visual)
+    if conocimiento is not None:
+        dato['conocimiento_visual'] = conocimiento
     with open(RECETAS, "a", encoding="utf-8") as f:
         f.write(json.dumps(dato, ensure_ascii=False) + "\n")
 
@@ -162,11 +166,14 @@ def leer_recetas():
 
 def buscar_recetas(objetivo, app, n=3):
     buscadas = palabras(objetivo)
-    if not buscadas:
+    if not buscadas or not app:
         return []
     puntuadas = []
     vistos = set()
     for r in reversed(leer_recetas()):
+        r = dict(r)
+        if r.get('app') != app:
+            continue
         clave = (r.get("app"), normalizar(r.get("objetivo", "")))
         if clave in vistos:
             continue
@@ -188,13 +195,27 @@ def buscar_recetas(objetivo, app, n=3):
     return [r for _, r in puntuadas[:n]]
 
 
-def texto_recetas(recetas):
+def texto_recetas(recetas, objetivo=None):
     bloques = []
     for r in recetas:
+        r = dict(r)
         origen = "te lo enseñó el usuario" if r.get("fuente") == "demostracion" else "lo hiciste bien antes"
         pasos = "; ".join(str(i) + ") " + p for i, p in enumerate(r.get("pasos", []), start=1))
-        bloques.append("- «" + r.get("objetivo", "") + "» en " + (r.get("app") or "?") + " (" + origen + "): " + pasos)
-    return "\n".join(bloques)
+        cabecera = "- «" + r.get("objetivo", "") + "» en " + (r.get("app") or "?") + " (" + origen + "): "
+        conocimiento = r.get('conocimiento_visual') or {}
+        if conocimiento.get('pasos'):
+            detalles = []
+            for p in conocimiento['pasos'][:4]:
+                detalles.append(str(p.get('paso_id')) + ': ' + str(p.get('descripcion',''))[:160]
+                    + '; finalidad posible: ' + str(p.get('finalidad_posible',''))[:120]
+                    + '; cambio observado: ' + str(p.get('cambio_visible',''))[:160]
+                    + '; incertidumbre: ' + str(p.get('incertidumbre',''))[:100])
+            bloques.append(cabecera + 'Interpretaciones visuales, sin validar su reutilización: '
+                           + ' | '.join(detalles)[:1200])
+            bloques.append('  Extracto de acciones grabadas: ' + pasos[:600])
+        else:
+            bloques.append(cabecera + pasos)
+    return "\n".join(bloques)[:4000]
 
 
 DISPARO_DEMO = re.compile(
@@ -217,12 +238,12 @@ def limpiar_correccion(texto):
     return resto[:1].upper() + resto[1:] if resto else resto
 
 
-def limpiar_pasos(pasos):
+def limpiar_pasos(pasos, conservar_superficies=False):
     limpios = []
     for paso in pasos:
-        if paso.startswith(("clic en", "clic derecho en")) and ("(Document)" in paso or "sin nombre" in paso or "(Pane)" in paso or "(Group)" in paso):
+        if not conservar_superficies and paso.startswith(("clic en", "clic derecho en")) and ("(Document)" in paso or "sin nombre" in paso or "(Pane)" in paso or "(Group)" in paso):
             continue
-        if limpios and limpios[-1] == paso:
+        if not conservar_superficies and limpios and limpios[-1] == paso:
             continue
         limpios.append(paso)
     return limpios

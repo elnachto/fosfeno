@@ -13,8 +13,18 @@ La idea nace de la fantasía del asistente tipo **Jarvis** (un compañero que ve
 - **Pregunta:** "¿qué significa este error?" responde con lo que ve en pantalla.
 - **Guía:** "¿cómo abro una pestaña nueva?" te señala el botón con una animación y te ofrece hacerlo por ti.
 - **Hazlo:** "abre WhatsApp y dile hola a Mamá" hace clic, escribe y pulsa teclas, paso a paso, con cuenta atrás y cancelación con `Esc`.
-- **Aprende por demostración:** "mírame cómo se crea un usuario" observa lo que haces, limpia los errores y guarda una receta.
-- **Explora una app:** "explora esta app" escribe un mapa de la ventana para ayudarte mejor la próxima vez.
+- **Aprende por demostración:** "mírame cómo se crea un usuario" observa lo que haces, limpia los errores y guarda una receta de esa aplicación. Ver [aprendizaje general](docs/aprendizaje-general.md).
+  La [ampliación visual](docs/aprendizaje-visual.md), implementada y pendiente de
+  pruebas, conserva capturas y eventos e incorpora interpretaciones como referencias
+  para ayuda, guía y acciones.
+- **Encadena tareas (experimental):** conserva datos breves al cambiar de ventana,
+  verifica subtareas y guarda un resumen final con lo comprobado y pendiente.
+  Las demostraciones se recuperan como ejemplos para adaptar al pedido actual. Ver
+  [alcance y ejemplos](docs/tareas-y-parametros.md).
+- **Explora una app:** "explora esta app" describe los controles visibles y guarda un mapa de esa ventana. Ver las limitaciones actuales más abajo.
+- **Revisa antes de confirmar (experimental):** contrasta formularios con el pedido
+  y bloquea algunos reintentos sin corregir tras un rechazo. El revisor aún pide
+  aclaraciones innecesarias en ciertos escenarios. Ver [pruebas y límites](docs/aprendizaje-general.md).
 - **Se corrige con la voz:** "no, era el botón de arriba" o "recuerda que aquí se guarda con Ctrl+S".
 - **Se marea** si das muchas vueltas con el mouse.
 - **Conversa:** responde con expresiones a "gracias", "hola", "buen trabajo", "¿cómo estás?" y similares, sin tocar nada.
@@ -27,12 +37,12 @@ La idea nace de la fantasía del asistente tipo **Jarvis** (un compañero que ve
 ## Cómo funciona
 
 1. Windows **UI Automation** lista los elementos reales de la ventana activa (botones, campos, pestañas, barra de tareas).
-2. Cada elemento se numera sobre la captura de pantalla y la lista se envía a un modelo de visión **local** (Nemotron 3.5 Bolt E4B vía `llama-server`).
-3. El modelo elige una acción: `CLIC n`, `ESCRIBIR texto`, `TECLA x` o `LISTO`. Un clasificador previo decide si lo que dijiste es una pregunta, una guía o una orden.
+2. Cada elemento se numera sobre la captura. El controlador recibe la lista, el foco, los valores y el texto visible; puede revisar también la imagen con un modelo de visión **local** vía `llama-server`.
+3. Un clasificador distingue preguntas, guías y órdenes. Para actuar, el modelo devuelve una acción estructurada; el controlador valida el destino, observa el resultado y verifica el objetivo antes de darlo por terminado.
 4. La voz se transcribe con `faster-whisper` en la CPU.
 5. Una capa transparente en PySide6 dibuja la bolita, las señales y los mensajes, con un efecto gooey (desenfoque + contraste) propio.
 
-Todo corre en tu máquina. Nada sale a internet.
+La inferencia corre en tu máquina. Las aplicaciones que le pidas usar pueden acceder a internet y enviar lo que escribas en ellas.
 
 ## Requisitos
 
@@ -59,7 +69,7 @@ copy correcciones.ejemplo.txt correcciones.txt
 Arranca el servidor del modelo en otra ventana (ajusta las rutas):
 
 ```
-llama-server -m RUTA\NVIDIA-Nemotron-3.5-Bolt-E4B-UD-Q4_K_XL.gguf --mmproj RUTA\mmproj-F16.gguf -ngl 99 -c 16384 -np 1 -fa on --jinja --host 127.0.0.1 --port 8095
+llama-server -m RUTA\NVIDIA-Nemotron-3.5-Bolt-E4B-UD-Q4_K_XL.gguf --mmproj RUTA\mmproj-F16.gguf --alias fosfeno-nemotron -ngl 99 -c 16384 -np 1 -fa on --jinja --host 127.0.0.1 --port 8095
 ```
 
 Y luego:
@@ -68,13 +78,125 @@ Y luego:
 python jarvis.py
 ```
 
+### Elegir motor
+
+Los tres motores usan el mismo controlador de tareas con estado explícito.
+El modo `lfm3` utiliza solo LFM3; el modo `hibrido` utiliza Nemotron para decidir
+y LFM3 para describir la pantalla en las revisiones visuales.
+
+| Opción `--motor` | Modelos | Arrancar servidores en `D:\LOCALai` | Arrancar el asistente en el proyecto |
+|---|---|---|---|
+| `nemotron` | Nemotron con visión, puerto 8095 | `iniciar-nemotron.bat` | `fosfeno-nemotron.bat` |
+| `lfm3` | LFM3-VL-2B, puerto 8096 | `iniciar-lfm3.bat` | `fosfeno-lfm3.bat` |
+| `hibrido` | Nemotron + LFM3, puertos 8095 y 8096 | `iniciar-hibrido.bat` | `fosfeno-hibrido.bat` |
+
+Ejemplo: `python jarvis.py --motor nemotron --texto`.
+Sin `--motor`, se usa `FOSFENO_MOTOR`, después `motor_ia` en `config.json`
+y finalmente `nemotron`. `lfm3-puro` se conserva como alias de `lfm3`.
+La voz sigue usando Whisper; elegir motor no cambia el micrófono.
+
+Los accesos `iniciar-*.bat` de la tabla pertenecen a la instalación local y
+están fuera de este repositorio. Desde el proyecto se puede ejecutar
+`python servidores_lfm3.py --motor nemotron` y, en otra ventana,
+`python jarvis.py --motor nemotron`, manteniendo la estructura de carpetas
+de modelos y runtime que se describe a continuación.
+
+`servidores_lfm3.py` arranca los servidores indicados, comprueba el modelo y
+la disponibilidad de visión, y reutiliza los que ya están listos. `Ctrl+C`
+cierra únicamente los procesos que inició esa ventana. Los registros están
+en `salidas/servidor-*.log`. Si hay un servidor antiguo sin visión o con otro
+modelo en el mismo puerto, el lanzador indica que hay que cerrarlo; no lo mata.
+
+LFM3 usa los archivos oficiales de
+[LiquidAI/LFM3-VL-2B-GGUF](https://huggingface.co/LiquidAI/LFM3-VL-2B-GGUF):
+`LFM3-VL-2B-Q8_0.gguf` y `mmproj-LFM3-VL-2B-F16.gguf`, en
+`D:\LOCALai\lfm3` (unos 2,23 GB en disco). El servidor compatible es
+`llama.cpp` b11946 CUDA 13.4, en `D:\LOCALai\llama-lfm3-b11946`.
+Nemotron mantiene los pesos y el proyector existentes en `D:\LOCALai\bolt`.
+Las rutas de los modelos y ejecutables se resuelven respecto a la carpeta
+padre del proyecto; al mover la instalación hay que mantener esa estructura.
+
+### Control de tareas
+
+- Las decisiones reciben el campo enfocado, su valor, el texto visible y el
+  resultado observado de las acciones anteriores. También reciben el estado
+  disponible de casillas, pestañas y selectores.
+- Las acciones se generan como JSON restringido y se validan antes de usarse.
+  El razonamiento interno nunca se ejecuta como una orden.
+- Una escritura dirigida a otro campo primero lo enfoca y solo continúa si
+  ese mismo destino y la ventana siguen siendo los esperados.
+- Los números de los controles pueden cambiar. La detección de repeticiones
+  usa la identidad del control y permite flechas o desplazamiento repetidos
+  cuando hay progreso observable.
+- Antes del clic se revalida su destino. Antes de escribir se comprueban foco
+  y ventana; `Esc` puede cancelar durante la escritura y antes de los atajos.
+- Declarar `LISTO` o quedarse sin un paso posible activa una verificación
+  separada. Solo un éxito verificado puede guardarse como receta automática.
+
+Esto sigue siendo experimental: interfaces que no exponen sus controles,
+animaciones, cambios de disposición, contexto incompleto y decisiones del
+modelo pueden causar fallos. No hay una garantía para cualquier aplicación.
+
+### Pruebas reproducibles
+
+`python -m unittest discover -s tests -v` comprueba las reglas del controlador
+y el entorno de evaluación sin enviar entradas al escritorio.
+
+`python evaluacion.py --motores lfm3,nemotron --semillas 42,99`
+compara ambos motores contra las mismas ocho tareas simuladas, con el mismo
+controlador, parámetros de muestreo y condiciones iniciales. No opera la PC.
+Guarda resultados, trazas, modelo real consultado y huellas de las fuentes en
+`salidas/evaluacion/`. Las pruebas simuladas y sobre capturas no sustituyen
+la validación de tareas completas en aplicaciones reales. Ver `docs/evaluacion.md`.
+
+### Estado de pruebas y limitaciones conocidas
+
+Resultados de la instalación local, revisados el 28 de octubre de 2026:
+
+| Evaluación | Nemotron | LFM3-VL |
+|---|---|---|
+| Ocho tareas simuladas, dos semillas por tarea | 16/16 completas y verificadas | 2/16 completas y verificadas |
+| Una tarea por aplicación en Word, Explorador y Bloc de notas | 0/3 completas | No evaluado en esta ronda |
+
+La primera ronda real usó decisiones del controlador sobre controles de Windows y
+un adaptador para ejecutar las entradas, con observación entre pasos. Se
+detuvo ante ciclos sin progreso, sin agotar su presupuesto de acciones. No
+incluyó voz ni el recorrido completo de los atajos e inyección nativa.
+Son muestras pequeñas; el resultado simulado no estima la fiabilidad general.
+
+- En esa versión, Word se bloqueaba al identificar el foco, el Explorador
+  repetía selecciones y Bloc de notas no completaba ni guardaba el pedido.
+  La ronda del 29 de octubre corrigió captura del editor y foco, selección
+  localizada, ciclos y comprobación de archivos; los resultados históricos
+  de la tabla se conservan.
+- Las demostraciones y mapas se guardan. El controlador con estado ahora recibe
+  notas, recetas y partes del pedido como referencia; se corrigió la desconexión
+  que hacía que la consola anunciara recetas que no llegaban al modelo.
+  Los resultados anteriores no se repitieron después de este cambio.
+- Explorar describe una captura; no recorre toda la aplicación ni valida sus
+  procedimientos.
+
+En la [ronda de escritorio del 29 de octubre](docs/pruebas-escritorio-2026-10-29.md),
+una regresión nueva del Explorador terminó en seis acciones con dos copias
+idénticas, originales conservados y final aceptado. Otra copió bien, pero el
+verificador rechazó el final. Bloc de notas modificó y guardó el inventario;
+las notas nuevas conservaron sangría, Unicode y salto final, aunque reconocer
+el final necesitó otra corrección. Word logró guardar, pero el formato complejo
+sigue incompleto. Los casos de desarrollo tuvieron correcciones e intervenciones;
+no forman un porcentaje general de éxito. En esa ronda pasaron 87 pruebas
+automatizadas del programa. La ampliación posterior de
+[tareas y parámetros](docs/tareas-y-parametros.md) incorpora memoria breve,
+subtareas verificadas y respuesta persistente; el recorrido nativo completo de
+voz y entradas sigue sin evaluarse.
+
+
 ## Uso
 
 | Atajo | Acción |
 |---|---|
 | `Ctrl+Alt+J` | Empieza a escuchar; al pulsar otra vez termina y decide qué hacer |
 | `Ctrl+Alt+K` | Fuerza el modo "hazlo"; también confirma una guía |
-| `Esc` | Cancela antes de cada clic |
+| `Esc` | Cancela antes del clic o atajo y durante la escritura |
 
 Otras formas de ejecutarlo:
 
@@ -98,6 +220,7 @@ Cosas para probar:
 |---|---|
 | `mic` | Micrófono elegido (se guarda solo) |
 | `modelo` | Modelo de Whisper: `small` por defecto |
+| `motor_ia` | `nemotron` (por defecto), `lfm3` o `hibrido`; `--motor` tiene prioridad |
 | `tecla`, `tecla_actuar` | Letras de los atajos |
 | `buddy` | Muestra la bolita en reposo |
 | `tema` | `claro` u `oscuro` |
@@ -106,11 +229,22 @@ Cosas para probar:
 
 ## Seguridad y privacidad
 
+Hay un [piloto de percepción OCR para ventanas con pocos controles accesibles](docs/percepcion-hibrida.md).
+Está desactivado por defecto. Permite experimentar con navegación por etiquetas
+visuales; todavía falla al relacionar datos de tablas. La
+[edición visual de laboratorio](docs/edicion-visual-laboratorio.md) permite ensayar
+escritura, teclas y guardado en una ventana vinculada explícitamente. El aprendizaje
+visual automático sigue desactivado.
+La [lectura con referencias](docs/lectura-con-referencias.md) añade comprobaciones
+de filas y columnas y explica los límites y prompts utilizados.
+
 - **Puede hacer clic y escribir como si fueras tú.** Úsalo en ventanas donde un error no cause daño. Todavía no pide confirmación antes de acciones sensibles (enviar, borrar, pagar); está en la lista de pendientes.
 - El texto y los nombres de la pantalla se tratan como **datos, nunca como órdenes**; solo cuenta lo que dices tú. Aun así, un modelo pequeño puede equivocarse.
 - Lo que aprende se guarda en `conocimiento/` (recetas y notas por app) y puede incluir texto que escribas o nombres que vea. **Está excluido de git** salvo la nota de ejemplo de Visual Studio Code. Revísalo antes de compartirlo.
 - "Mírame" no guarda el contenido de campos de contraseña.
 - `salidas/` guarda capturas y registros de cada paso para depurar; también está excluida.
+  `salidas/tareas/` contiene los resultados JSON/Markdown y los datos conservados
+  durante cada tarea; no se vuelven a cargar automáticamente en otras tareas.
 
 ## Estructura
 
@@ -118,6 +252,12 @@ Cosas para probar:
 |---|---|
 | `jarvis.py` | Programa principal: atajos, flujo y decisiones |
 | `marcas.py` | Lee la pantalla, arma la lista numerada y habla con el modelo |
+| `motor_ia.py` | Perfiles de Nemotron y LFM3: servidor y parámetros de generación |
+| `agente.py` | Estado, validación de acciones, continuidad de escritura y verificación del objetivo |
+| `tareas.py` | Subtareas, memoria breve con procedencia y respuesta final persistente |
+| `precondiciones.py` | Revisión de formularios, firma de valores y bloqueo de reintentos rechazados |
+| `servidores_lfm3.py` | Arranque y comprobación de los servidores de los tres modos |
+| `evaluacion.py` | Comparación reproducible en ocho tareas simuladas |
 | `overlay.py` | La bolita, las expresiones y el efecto gooey |
 | `acciones.py` | Clic, teclas y escritura con `SendInput` |
 | `voz.py` | Micrófono y transcripción |

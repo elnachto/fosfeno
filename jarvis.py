@@ -15,8 +15,10 @@ import requests
 import sounddevice as sd
 
 import acciones
+import agente
 import marcas
 import memoria
+import tareas
 import voz
 
 user32 = ctypes.windll.user32
@@ -32,7 +34,7 @@ ID_ACTUAR = 2
 SEGUNDOS_SENAL = 6
 VUELO_ESPERA = 0.8
 CUENTA_ATRAS = 1.0
-MAX_PASOS = 12
+MAX_PASOS = agente.MAX_PASOS
 CONFIRMAR_SEGUNDOS = 20
 MIN_CARACTERES = 3
 OFERTA_SEGUNDOS = 10
@@ -59,9 +61,10 @@ FONDO = "#0f172a"
 
 def servidor_listo():
     try:
-        base = marcas.URL.rsplit("/v1/", 1)[0]
-        r = requests.get(base + "/health", timeout=3)
-        return r.status_code == 200
+        urls = [marcas.URL]
+        if marcas.PERFIL.get("agente_estado") and marcas.PERFIL.get("planificador_url"):
+            urls.append(marcas.PERFIL["planificador_url"])
+        return all(requests.get(url.rsplit("/v1/", 1)[0] + "/health", timeout=3).status_code == 200 for url in urls)
     except Exception:
         return False
 
@@ -301,7 +304,7 @@ def escanear():
     img = marcas.grab()
     capa.enviar(cmd="mostrar_capa")
     ancho, alto = img.size
-    titulo, elementos, truncado = marcas.reunir(ancho, alto)
+    titulo, elementos, truncado = marcas.reunir(ancho, alto, imagen=img)
     return img, titulo, elementos
 
 
@@ -332,16 +335,52 @@ def guardar_exito(app, objetivo, pasos):
 
 
 def ejecutar(objetivo, escaneo, sello):
+    try:
+        tarea = tareas.SesionTarea(objetivo, marcas.partir_objetivo(objetivo))
+    except ValueError as error:
+        avisar(str(error), 8, expresion='confundido')
+        return
+    try:
+        _ejecutar_tarea(objetivo, escaneo, sello, tarea)
+    except (ValueError, marcas.ErrorRespuestaModelo, OSError) as error:
+        tarea.terminar('incompleta', str(error))
+    finally:
+        if tarea.estado == 'en_curso':
+            tarea.terminar('incompleta', 'La ejecución se detuvo antes de comprobar todo el pedido.')
+        ruta = None
+        try:
+            ruta = tarea.guardar(os.path.join(marcas.OUT, 'tareas'))
+        except OSError as error:
+            print('No pude guardar el informe de la tarea:', error)
+        ESTADO['ultimo_resultado'] = {'ruta': str(ruta) if ruta else None, 'resultado': tarea.resultado()}
+        respuesta = tarea.respuesta_final()
+        avisar(respuesta[:700], min(22.0, 5 + len(respuesta) / 35),
+               expresion='feliz' if tarea.estado == 'completada' else 'confundido')
+        if len(respuesta) > 700:
+            print(respuesta)
+        if ruta:
+            print('Resultado guardado:', ruta.with_suffix('.md'))
+
+
+def _ejecutar_tarea(objetivo, escaneo, sello, tarea):
     img, titulo, elementos = escaneo
     historial = []
     anterior = None
+    traza = []
+    feedback = ""
+    verificaciones_fallidas = 0
+    estado_anterior = None
+    pendiente = None
     ruta_log = os.path.join(marcas.OUT, "log_actuar_" + sello + ".txt")
     app_inicial = memoria.app_de(titulo)
     control("pensar")
-    partes = marcas.partir_objetivo(objetivo)
+    partes = [e['objetivo'] for e in tarea.etapas]
     compuesto = len(partes) > 1
-    ejemplos = "" if compuesto else memoria.texto_recetas(memoria.buscar_recetas(objetivo, app_inicial))
+    recetas = [] if compuesto else memoria.buscar_recetas(objetivo, app_inicial)
+    app_referencias = app_inicial
+    ejemplos = memoria.texto_recetas(recetas, objetivo)
     with open(ruta_log, "w", encoding="utf-8") as log:
+        log.write("MOTOR: " + marcas.PERFIL["nombre"] + "\n")
         log.write("OBJETIVO: " + objetivo + "\n")
         if compuesto:
             print("Partes:", " | ".join(partes))
@@ -354,8 +393,20 @@ def ejecutar(objetivo, escaneo, sello):
             capa.enviar(cmd="plan", hechos=len(historial), activo=True)
             control("pensar")
             if paso > 1:
-                time.sleep(0.9)
+                time.sleep(0.45)
                 img, titulo, elementos = escanear()
+            estado_actual = dict(marcas.ESTADO_UI)
+            app_actual = memoria.app_de(titulo)
+            if app_actual != app_referencias:
+                app_referencias = app_actual
+                recetas = [] if compuesto else memoria.buscar_recetas(objetivo, app_actual)
+                ejemplos = memoria.texto_recetas(recetas, objetivo)
+                log.write('REFERENCIAS DE APLICACIÓN: ' + app_actual + '\n' + ejemplos + '\n')
+            if traza and estado_anterior is not None:
+                cambio = agente.huella(estado_anterior, traza[-1].pop("_elementos", elementos)) != agente.huella(estado_actual, elementos)
+                traza[-1]["resultado"] = {"cambio_observable": cambio,
+                    "ventana": titulo, "foco": estado_actual.get("foco", {})}
+                log.write("OBSERVADO: " + json.dumps(traza[-1]["resultado"], ensure_ascii=False) + "\n")
             if es_mi_consola(titulo):
                 log.write("\n--- PASO " + str(paso) + " | " + titulo + " ---\nPARADO: la ventana activa es la consola de Jarvis\n")
                 avisar("Estoy en mi propia consola, paro aquí", expresion="confundido")
@@ -363,7 +414,14 @@ def ejecutar(objetivo, escaneo, sello):
             if not elementos:
                 avisar("No puedo ver los botones de esta ventana", expresion="triste")
                 return
-            accion, respuesta, lista, marcada, seg = marcas.decidir_accion(objetivo, img, titulo, elementos, historial, ejemplos, partes)
+            continuacion = agente.continuar_pendiente(pendiente, estado_actual, elementos, img, marcas.preguntar_json)
+            pendiente = None
+            if continuacion:
+                accion, respuesta, lista, marcada, seg = continuacion, "Continuación de escritura con foco comprobado", marcas.construir_lista(elementos, *img.size), marcas.marcar(img, elementos), 0.0
+            else:
+                accion, respuesta, lista, marcada, seg = marcas.decidir_accion(objetivo, img, titulo, elementos, historial, ejemplos, partes,
+                    estado=estado_actual, traza=traza, feedback=feedback, tarea=tarea)
+            feedback = ""
             try:
                 marcada.save(os.path.join(marcas.OUT, "actuar_" + sello + "_p" + str(paso) + ".jpg"), quality=85)
             except Exception:
@@ -371,26 +429,98 @@ def ejecutar(objetivo, escaneo, sello):
             log.write("\n--- PASO " + str(paso) + " | " + titulo + " ---\nELEMENTOS (" + str(len(elementos)) + "):\n" + lista + "\n\nMODELO:\n" + respuesta + "\n")
             log.flush()
             if accion is None:
+                print("Respuesta del modelo sin una acción válida:", repr(respuesta[:500]))
                 avisar("No entendí qué hacer", expresion="confundido")
                 return
             tipo = accion["tipo"]
+            estado_actual['memoria_tarea'] = tarea.contexto()
+            if tipo in ('listo', 'nada', 'siguiente'):
+                estado_actual['archivos_observados'] = marcas.evidencia_archivos(objetivo)
+                estado_actual['copias_observadas'] = marcas.evidencia_copias(objetivo, traza)
             print("Paso", paso, "->", tipo, "(modelo:", round(seg, 1), "s)")
+            verificacion_previa = None
+            if tipo == "nada" and marcas.PERFIL.get("agente_estado"):
+                verificacion_previa = agente.verificar(objetivo, elementos, estado_actual, historial, marcas.preguntar_json, img)
+                if agente.final_confirmado(verificacion_previa):
+                    tipo = "listo"
+            if tipo in ('listo', 'siguiente') and tarea.actual:
+                revision_etapa = agente.verificar(tarea.actual, elementos, estado_actual, historial, marcas.preguntar_json, img)
+                log.write('VERIFICACION_ETAPA: ' + json.dumps(revision_etapa, ensure_ascii=False) + '\n')
+                try:
+                    tarea.avanzar(revision_etapa)
+                except ValueError as error:
+                    verificaciones_fallidas += 1
+                    feedback = str(error)
+                    if verificaciones_fallidas >= 3:
+                        tarea.terminar('incompleta', feedback)
+                        return
+                    continue
+                tarea.guardar(os.path.join(marcas.OUT, 'tareas'))
+                estado_actual['memoria_tarea'] = tarea.contexto()
+                if tarea.actual:
+                    feedback = 'Etapa comprobada. Continúa con la etapa activa usando los datos conservados.'
+                    continue
+                tipo = 'listo'
+                if len(tarea.etapas) == 1:
+                    verificacion_previa = revision_etapa
             if tipo == "listo":
-                if historial and not compuesto:
+                verificado = False
+                if marcas.PERFIL.get("agente_estado"):
+                    verificacion = verificacion_previa or agente.verificar(objetivo, elementos, estado_actual, historial, marcas.preguntar_json, img)
+                    log.write("VERIFICACION: " + json.dumps(verificacion, ensure_ascii=False) + "\n")
+                    verificado = agente.final_confirmado(verificacion)
+                    if not verificado:
+                        tarea.etapas[-1]['estado'] = 'activa'
+                        tarea.etapas[-1]['evidencia'] = ''
+                        verificaciones_fallidas += 1
+                        feedback = "El objetivo NO está cumplido. Falta: " + verificacion.get("pendiente", "evidencia observable")
+                        if verificaciones_fallidas >= 3:
+                            tarea.terminar('incompleta', feedback)
+                            avisar("No pude comprobar que la tarea esté terminada.", expresion="confundido")
+                            return
+                        continue
+                if historial and not compuesto and verificado and not marcas.PERFIL.get('vision_experimental'):
                     guardar_exito(app_inicial, objetivo, [("dije lo que se veía en pantalla" if h.startswith("dije «") else h) for h in historial])
                 capa.enviar(cmd="plan", hechos=len(historial), activo=False)
                 capa.enviar(cmd="estado", valor="idle")
-                avisar("Listo.", 2.5, expresion="feliz")
+                tarea.terminar('completada')
                 return
             if tipo == "nada":
+                tarea.terminar('incompleta', accion.get('_evidencia', 'No hay un siguiente paso válido.'))
                 avisar("No veo cómo hacerlo desde aquí.", expresion="confundido")
                 return
-            clave = str(accion)
-            if clave == anterior:
-                avisar("Me quedé repitiendo el mismo paso, paro.", expresion="confundido")
-                return
+            clave = agente.clave_accion(accion, elementos)
+            if agente.repetida_sin_progreso(accion, elementos, traza) or agente.ciclo_sin_progreso(accion, elementos, estado_actual, traza):
+                feedback = "La misma acción ya se ejecutó, aunque su número haya cambiado. Elige un paso diferente."
+                if paso == MAX_PASOS:
+                    avisar("No pude avanzar después de reintentar.", expresion="confundido")
+                    return
+                continue
             anterior = clave
-            if tipo == "clic":
+            actual = marcas.capturar_estado(marcas.nombre_ventana(), elementos)
+            if estado_actual.get("hwnd") and actual.get("hwnd") != estado_actual["hwnd"]:
+                avisar("Cambió la ventana activa. Me detuve para no actuar en otra aplicación.", expresion="confundido")
+                return
+            estado_anterior = estado_actual
+            inicio_historial = len(historial)
+            if tipo == 'preguntar':
+                tarea.terminar('requiere_datos', accion['texto'])
+                return
+            if tipo in ('recordar', 'importar_plan'):
+                try:
+                    if tipo == 'recordar':
+                        dato = tarea.recordar(accion['texto'], estado_actual)
+                        historial.append('conservé un dato observado de la etapa ' + str(dato['etapa']))
+                    else:
+                        tarea.importar_plan(accion['texto'], estado_actual)
+                        partes = [e['objetivo'] for e in tarea.etapas]
+                        compuesto = True
+                        historial.append('importé instrucciones literales de la fuente elegida por el usuario')
+                except (ValueError, TypeError) as error:
+                    feedback = str(error)
+                    continue
+                tarea.guardar(os.path.join(marcas.OUT, 'tareas'))
+            elif tipo == "clic":
                 elemento = elementos[accion["n"] - 1]
                 rect = (elemento[2], elemento[3], elemento[4], elemento[5])
                 punto = ((rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2)
@@ -409,27 +539,66 @@ def ejecutar(objetivo, escaneo, sello):
                     capa.enviar(cmd="limpiar")
                     avisar("Cancelado.")
                     return
+                if accion.get('_revision_previa') and not marcas.formulario_sin_cambios(accion['_revision_previa'], *img.size):
+                    feedback = 'El formulario cambió o la recaptura es parcial. Revisa sus valores otra vez antes de confirmar.'
+                    continue
                 control("mover")
+                if elemento[0] == 'VisualText':
+                    capa.enviar(cmd="ocultar")
+                    if capa.activa():
+                        time.sleep(0.15)
+                if not marcas.validar_destino(elemento, estado_actual.get("hwnd")):
+                    feedback = "El control cambió después de observarlo. Identifica de nuevo el destino en la pantalla actual."
+                    anterior = None
+                    continue
                 if not acciones.mover_suave(punto[0], punto[1]):
                     capa.enviar(cmd="limpiar")
                     avisar("Cancelado.")
                     return
                 capa.enviar(cmd="toque")
-                acciones.clic(punto[0], punto[1])
+                if not acciones.clic(punto[0], punto[1]):
+                    avisar("Cancelado.")
+                    return
                 capa.enviar(cmd="limpiar")
                 historial.append("clic en «" + etiqueta(elemento) + "»")
                 log.write("EJECUTADO: " + historial[-1] + "\n")
             elif tipo == "escribir":
+                if accion.get('_escritura_visual'):
+                    if not marcas.validar_escritura_visual(accion, actual.get('hwnd')):
+                        feedback = 'La escritura visual perdió su ventana de laboratorio o la captura caducó.'
+                        continue
+                elif marcas.PERFIL.get("agente_estado"):
+                    foco = actual.get("foco", {})
+                    elegido = estado_actual.get("foco", {})
+                    if not foco.get("editable") or foco.get("secreto") or foco.get("nombre") != elegido.get("nombre"):
+                        feedback = "El foco cambió o no es editable. Observa de nuevo antes de escribir."
+                        anterior = None
+                        continue
                 print("Escribo:", accion["texto"])
                 capa.enviar(cmd="mensaje", texto="Escribo: " + accion["texto"][:30], duracion=1.5)
                 if esperar_cancelacion(0.6):
                     avisar("Cancelado.")
                     return
+                comprobado = marcas.capturar_estado(marcas.nombre_ventana(), elementos)
+                if (estado_actual.get("hwnd") and comprobado.get("hwnd") != estado_actual["hwnd"]) or (not accion.get('_escritura_visual') and comprobado.get("foco", {}).get("n") != actual.get("foco", {}).get("n")):
+                    avisar("Cambió el foco antes de escribir. Me detuve.", expresion="confundido")
+                    return
                 control("escribir")
-                acciones.escribir(accion["texto"])
+                if accion.get("reemplazar"):
+                    if not acciones.seleccionar_todo():
+                        avisar("Cancelado.")
+                        return
+                    seleccionado = marcas.capturar_estado(marcas.nombre_ventana(), elementos)
+                    if seleccionado.get('hwnd') != comprobado.get('hwnd') or (not accion.get('_escritura_visual') and (seleccionado.get('foco', {}).get('n') != comprobado.get('foco', {}).get('n') or seleccionado.get('foco', {}).get('secreto') or not seleccionado.get('foco', {}).get('editable'))):
+                        avisar('El foco cambió al seleccionar. Me detuve antes de escribir.', expresion='confundido')
+                        return
+                if not acciones.escribir(accion["texto"]):
+                    avisar("Cancelado durante la escritura.")
+                    return
                 historial.append("escribí «" + accion["texto"] + "»")
                 log.write("EJECUTADO: " + historial[-1] + "\n")
             elif tipo == "decir":
+                tarea.registrar_respuesta(accion['texto'])
                 texto_d = accion["texto"][:300]
                 print("Digo:", texto_d)
                 capa.enviar(cmd="estado", valor="idle")
@@ -441,13 +610,37 @@ def ejecutar(objetivo, escaneo, sello):
                     avisar("Cancelado.")
                     return
             elif tipo == "tecla":
+                if accion.get('_revision_previa') and not marcas.formulario_sin_cambios(accion['_revision_previa'], *img.size):
+                    feedback = 'El formulario cambió o la recaptura es parcial. Revisa sus valores otra vez antes de confirmar.'
+                    continue
                 print("Tecla:", accion["tecla"])
                 control("escribir")
-                acciones.tecla(accion["tecla"])
+                if not acciones.tecla(accion["tecla"]):
+                    avisar("Cancelado.")
+                    return
                 historial.append("pulsé la tecla " + accion["tecla"])
                 log.write("EJECUTADO: " + historial[-1] + "\n")
+            elif tipo == "esperar":
+                if esperar_cancelacion(1.0):
+                    avisar("Cancelado.")
+                    return
+                historial.append("esperé a que cargara la interfaz")
+                anterior = None
+            elif tipo == "desplazar":
+                if not acciones.desplazar(accion["direccion"]):
+                    avisar("Cancelado.")
+                    return
+                historial.append("desplacé la vista hacia " + accion["direccion"])
+            if len(historial) > inicio_historial:
+                pendiente = accion.get("_despues")
+                traza.append({"clave": repr(clave), "accion": historial[-1],
+                              "huella": agente.huella(estado_actual, elementos),
+                              'firma_operativa': agente.firma_operativa(accion, elementos, estado_actual),
+                              "evento": agente.evento_accion(accion, elementos, estado_actual),
+                              "objetivo": accion.get("_objetivo", ""), "_elementos": elementos})
             log.flush()
         avisar("Llegué al máximo de pasos.", expresion="triste")
+        tarea.terminar('incompleta', 'Se alcanzó el límite de acciones antes de completar el pedido.')
 
 
 def procesar(modelo, audio, modo_actuar):
@@ -517,6 +710,9 @@ def continuar(texto, escaneo, sello, inicio, forzar_hacer):
         else:
             ESTADO["ultimo"] = {"app": app, "objetivo": texto}
             guiar(texto, escaneo, sello, inicio)
+    except (marcas.ErrorRespuestaModelo, OSError) as error:
+        print("Error de respuesta del modelo:", error)
+        avisar("El modelo no devolvió una respuesta final. Revisa el aviso de la consola.", expresion="confundido")
     finally:
         capa.enviar(cmd="estado", valor="idle")
 
@@ -654,7 +850,10 @@ def aprender(objetivo, titulo, sello):
     if not objetivo:
         avisar("Dime qué me enseñas, por ejemplo: mírame cómo se abre una pestaña", 4.0, expresion="confundido")
         return
-    demo = mirame.Demostracion()
+    from pathlib import Path
+    import uuid
+    carpeta_visual = Path(marcas.OUT)/'demostraciones'/(sello+'-'+uuid.uuid4().hex[:8])
+    demo = mirame.Demostracion(carpeta_visual=carpeta_visual)
     demo.iniciar()
     capa.enviar(cmd="estado", valor="observando")
     capa.enviar(cmd="plan", hechos=0, activo=True)
@@ -684,8 +883,17 @@ def aprender(objetivo, titulo, sello):
     app = memoria.app_de(titulo_app) or memoria.app_de(titulo)
     capa.enviar(cmd="estado", valor="pensando")
     capa.enviar(cmd="mensaje", texto="Repasando lo que hiciste…", duracion=20)
-    limpios = memoria.limpiar_pasos(pasos)
-    limpios = marcas.depurar_pasos(objetivo, limpios) if limpios else []
+    visual = getattr(demo, 'ruta_visual', None)
+    limpios = memoria.limpiar_pasos(pasos, conservar_superficies=True)
+    if getattr(demo, 'error_visual', None):
+        print('Captura visual incompleta:', demo.error_visual)
+    conocimiento = None
+    if visual:
+        try:
+            from demostraciones import interpretar
+            conocimiento = interpretar(visual, objetivo, marcas.preguntar_json)
+        except (OSError, ValueError, marcas.ErrorRespuestaModelo) as error:
+            print('No pude interpretar la demostración visual:', error)
     capa.enviar(cmd="estado", valor="idle")
     with open(os.path.join(marcas.OUT, "log_aprender_" + sello + ".txt"), "w", encoding="utf-8") as f:
         f.write("OBJETIVO: " + objetivo + "\nAPP: " + app + "\n\nGRABADO:\n" + "\n".join(pasos) + "\n\nLIMPIO:\n" + "\n".join(limpios) + "\n")
@@ -706,8 +914,9 @@ def aprender(objetivo, titulo, sello):
         avisar("Descartado, enséñamelo otra vez cuando quieras", 3.0)
         capa.enviar(cmd="plan_fin")
         return
-    memoria.guardar_receta(app, objetivo, limpios, "demostracion", crudos=pasos)
-    avisar("Aprendí «" + objetivo + "» (" + str(len(limpios)) + " pasos)", 3.5, expresion="enamorado")
+    memoria.guardar_receta(app, objetivo, limpios, "demostracion", crudos=pasos,
+                          demostracion_visual=visual, conocimiento=conocimiento)
+    avisar("Guardé la demostración «" + objetivo + "» (" + str(len(limpios)) + " pasos)", 3.5, expresion="enamorado")
     time.sleep(0.8)
     capa.enviar(cmd="plan_fin")
 
@@ -747,6 +956,7 @@ def modo_texto(letra, letra_actuar, actuar_ok):
 
 def main():
     marcas.preparar_dpi()
+    print("Motor de IA:", marcas.PERFIL["nombre"], "|", marcas.URL)
     cfg = voz.leer_config()
     CONFIG.update(cfg)
     letra = str(cfg.get("tecla", "J"))[:1].upper()
@@ -754,8 +964,8 @@ def main():
     LETRAS["senalar"] = letra
     LETRAS["actuar"] = letra_actuar
     if not servidor_listo():
-        print("El servidor del Nemotron no responde en el puerto 8095.")
-        print("Ejecuta D:\\LOCALai\\iniciar-nemotron.bat y vuelve a intentarlo.")
+        print("El servidor de " + marcas.PERFIL["nombre"] + " no responde.")
+        print("Ejecuta " + marcas.PERFIL["iniciar"] + " y vuelve a intentarlo.")
         return
     sin_voz = "--texto" in sys.argv
     modelo = None

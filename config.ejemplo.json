@@ -1,4 +1,5 @@
 {
+  "motor_ia": "nemotron",
   "modelo": "small",
   "tecla": "J",
   "tecla_actuar": "K",
