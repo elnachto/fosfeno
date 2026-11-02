@@ -16,6 +16,7 @@ import sounddevice as sd
 
 import acciones
 import agente
+import rendimiento
 import marcas
 import memoria
 import tareas
@@ -297,6 +298,7 @@ def avisar(texto, duracion=3.5, expresion=None):
     capa.enviar(cmd="mensaje", texto=texto, duracion=duracion)
 
 
+@rendimiento.medir('captura_percepcion_s')
 def escanear():
     capa.enviar(cmd="ocultar")
     if capa.activa():
@@ -389,256 +391,259 @@ def _ejecutar_tarea(objetivo, escaneo, sello, tarea):
             print("Uso recetas aprendidas:\n" + ejemplos)
             log.write("RECETAS:\n" + ejemplos + "\n")
         for paso in range(1, MAX_PASOS + 1):
-            capa.enviar(cmd="estado", valor="pensando")
-            capa.enviar(cmd="plan", hechos=len(historial), activo=True)
-            control("pensar")
-            if paso > 1:
-                time.sleep(0.45)
-                img, titulo, elementos = escanear()
-            estado_actual = dict(marcas.ESTADO_UI)
-            app_actual = memoria.app_de(titulo)
-            if app_actual != app_referencias:
-                app_referencias = app_actual
-                recetas = [] if compuesto else memoria.buscar_recetas(objetivo, app_actual)
-                ejemplos = memoria.texto_recetas(recetas, objetivo)
-                log.write('REFERENCIAS DE APLICACIÓN: ' + app_actual + '\n' + ejemplos + '\n')
-            if traza and estado_anterior is not None:
-                cambio = agente.huella(estado_anterior, traza[-1].pop("_elementos", elementos)) != agente.huella(estado_actual, elementos)
-                traza[-1]["resultado"] = {"cambio_observable": cambio,
-                    "ventana": titulo, "foco": estado_actual.get("foco", {})}
-                log.write("OBSERVADO: " + json.dumps(traza[-1]["resultado"], ensure_ascii=False) + "\n")
-            if es_mi_consola(titulo):
-                log.write("\n--- PASO " + str(paso) + " | " + titulo + " ---\nPARADO: la ventana activa es la consola de Jarvis\n")
-                avisar("Estoy en mi propia consola, paro aquí", expresion="confundido")
-                return
-            if not elementos:
-                avisar("No puedo ver los botones de esta ventana", expresion="triste")
-                return
-            continuacion = agente.continuar_pendiente(pendiente, estado_actual, elementos, img, marcas.preguntar_json)
-            pendiente = None
-            if continuacion:
-                accion, respuesta, lista, marcada, seg = continuacion, "Continuación de escritura con foco comprobado", marcas.construir_lista(elementos, *img.size), marcas.marcar(img, elementos), 0.0
-            else:
-                accion, respuesta, lista, marcada, seg = marcas.decidir_accion(objetivo, img, titulo, elementos, historial, ejemplos, partes,
-                    estado=estado_actual, traza=traza, feedback=feedback, tarea=tarea)
-            feedback = ""
-            try:
-                marcada.save(os.path.join(marcas.OUT, "actuar_" + sello + "_p" + str(paso) + ".jpg"), quality=85)
-            except Exception:
-                pass
-            log.write("\n--- PASO " + str(paso) + " | " + titulo + " ---\nELEMENTOS (" + str(len(elementos)) + "):\n" + lista + "\n\nMODELO:\n" + respuesta + "\n")
-            log.flush()
-            if accion is None:
-                print("Respuesta del modelo sin una acción válida:", repr(respuesta[:500]))
-                avisar("No entendí qué hacer", expresion="confundido")
-                return
-            tipo = accion["tipo"]
-            estado_actual['memoria_tarea'] = tarea.contexto()
-            if tipo in ('listo', 'nada', 'siguiente'):
-                estado_actual['archivos_observados'] = marcas.evidencia_archivos(objetivo)
-                estado_actual['copias_observadas'] = marcas.evidencia_copias(objetivo, traza)
-            print("Paso", paso, "->", tipo, "(modelo:", round(seg, 1), "s)")
-            verificacion_previa = None
-            if tipo == "nada" and marcas.PERFIL.get("agente_estado"):
-                verificacion_previa = agente.verificar(objetivo, elementos, estado_actual, historial, marcas.preguntar_json, img)
-                if agente.final_confirmado(verificacion_previa):
-                    tipo = "listo"
-            if tipo in ('listo', 'siguiente') and tarea.actual:
-                revision_etapa = agente.verificar(tarea.actual, elementos, estado_actual, historial, marcas.preguntar_json, img)
-                log.write('VERIFICACION_ETAPA: ' + json.dumps(revision_etapa, ensure_ascii=False) + '\n')
+            with rendimiento.paso(paso, "escritorio", sello,
+                    rendimiento.ULTIMOS.get('captura_percepcion_s', 0.0) if paso == 1 else 0.0) as medicion:
+                capa.enviar(cmd="estado", valor="pensando")
+                capa.enviar(cmd="plan", hechos=len(historial), activo=True)
+                control("pensar")
+                if paso > 1:
+                    time.sleep(0.45)
+                    img, titulo, elementos = escanear()
+                estado_actual = dict(marcas.ESTADO_UI)
+                app_actual = memoria.app_de(titulo)
+                if app_actual != app_referencias:
+                    app_referencias = app_actual
+                    recetas = [] if compuesto else memoria.buscar_recetas(objetivo, app_actual)
+                    ejemplos = memoria.texto_recetas(recetas, objetivo)
+                    log.write('REFERENCIAS DE APLICACIÓN: ' + app_actual + '\n' + ejemplos + '\n')
+                if traza and estado_anterior is not None:
+                    cambio = agente.huella(estado_anterior, traza[-1].pop("_elementos", elementos)) != agente.huella(estado_actual, elementos)
+                    traza[-1]["resultado"] = {"cambio_observable": cambio,
+                        "ventana": titulo, "foco": estado_actual.get("foco", {})}
+                    log.write("OBSERVADO: " + json.dumps(traza[-1]["resultado"], ensure_ascii=False) + "\n")
+                if es_mi_consola(titulo):
+                    log.write("\n--- PASO " + str(paso) + " | " + titulo + " ---\nPARADO: la ventana activa es la consola de Jarvis\n")
+                    avisar("Estoy en mi propia consola, paro aquí", expresion="confundido")
+                    return
+                if not elementos:
+                    avisar("No puedo ver los botones de esta ventana", expresion="triste")
+                    return
+                continuacion = agente.continuar_pendiente(pendiente, estado_actual, elementos, img, marcas.preguntar_json)
+                pendiente = None
+                if continuacion:
+                    accion, respuesta, lista, marcada, seg = continuacion, "Continuación de escritura con foco comprobado", marcas.construir_lista(elementos, *img.size), marcas.marcar(img, elementos), 0.0
+                else:
+                    accion, respuesta, lista, marcada, seg = marcas.decidir_accion(objetivo, img, titulo, elementos, historial, ejemplos, partes,
+                        estado=estado_actual, traza=traza, feedback=feedback, tarea=tarea)
+                medicion["accion"] = accion
+                feedback = ""
                 try:
-                    tarea.avanzar(revision_etapa)
-                except ValueError as error:
-                    verificaciones_fallidas += 1
-                    feedback = str(error)
-                    if verificaciones_fallidas >= 3:
-                        tarea.terminar('incompleta', feedback)
-                        return
-                    continue
-                tarea.guardar(os.path.join(marcas.OUT, 'tareas'))
+                    marcada.save(os.path.join(marcas.OUT, "actuar_" + sello + "_p" + str(paso) + ".jpg"), quality=85)
+                except Exception:
+                    pass
+                log.write("\n--- PASO " + str(paso) + " | " + titulo + " ---\nELEMENTOS (" + str(len(elementos)) + "):\n" + lista + "\n\nMODELO:\n" + respuesta + "\n")
+                log.flush()
+                if accion is None:
+                    print("Respuesta del modelo sin una acción válida:", repr(respuesta[:500]))
+                    avisar("No entendí qué hacer", expresion="confundido")
+                    return
+                tipo = accion["tipo"]
                 estado_actual['memoria_tarea'] = tarea.contexto()
-                if tarea.actual:
-                    feedback = 'Etapa comprobada. Continúa con la etapa activa usando los datos conservados.'
-                    continue
-                tipo = 'listo'
-                if len(tarea.etapas) == 1:
-                    verificacion_previa = revision_etapa
-            if tipo == "listo":
-                verificado = False
-                if marcas.PERFIL.get("agente_estado"):
-                    verificacion = verificacion_previa or agente.verificar(objetivo, elementos, estado_actual, historial, marcas.preguntar_json, img)
-                    log.write("VERIFICACION: " + json.dumps(verificacion, ensure_ascii=False) + "\n")
-                    verificado = agente.final_confirmado(verificacion)
-                    if not verificado:
-                        tarea.etapas[-1]['estado'] = 'activa'
-                        tarea.etapas[-1]['evidencia'] = ''
+                if tipo in ('listo', 'nada', 'siguiente'):
+                    estado_actual['archivos_observados'] = marcas.evidencia_archivos(objetivo)
+                    estado_actual['copias_observadas'] = marcas.evidencia_copias(objetivo, traza)
+                print("Paso", paso, "->", tipo, "(modelo:", round(seg, 1), "s)")
+                verificacion_previa = None
+                if tipo == "nada" and marcas.PERFIL.get("agente_estado"):
+                    verificacion_previa = agente.verificar(objetivo, elementos, estado_actual, historial, marcas.preguntar_json, img)
+                    if agente.final_confirmado(verificacion_previa):
+                        tipo = "listo"
+                if tipo in ('listo', 'siguiente') and tarea.actual:
+                    revision_etapa = agente.verificar(tarea.actual, elementos, estado_actual, historial, marcas.preguntar_json, img)
+                    log.write('VERIFICACION_ETAPA: ' + json.dumps(revision_etapa, ensure_ascii=False) + '\n')
+                    try:
+                        tarea.avanzar(revision_etapa)
+                    except ValueError as error:
                         verificaciones_fallidas += 1
-                        feedback = "El objetivo NO está cumplido. Falta: " + verificacion.get("pendiente", "evidencia observable")
+                        feedback = str(error)
                         if verificaciones_fallidas >= 3:
                             tarea.terminar('incompleta', feedback)
-                            avisar("No pude comprobar que la tarea esté terminada.", expresion="confundido")
                             return
                         continue
-                if historial and not compuesto and verificado and not marcas.PERFIL.get('vision_experimental'):
-                    guardar_exito(app_inicial, objetivo, [("dije lo que se veía en pantalla" if h.startswith("dije «") else h) for h in historial])
-                capa.enviar(cmd="plan", hechos=len(historial), activo=False)
-                capa.enviar(cmd="estado", valor="idle")
-                tarea.terminar('completada')
-                return
-            if tipo == "nada":
-                tarea.terminar('incompleta', accion.get('_evidencia', 'No hay un siguiente paso válido.'))
-                avisar("No veo cómo hacerlo desde aquí.", expresion="confundido")
-                return
-            clave = agente.clave_accion(accion, elementos)
-            if agente.repetida_sin_progreso(accion, elementos, traza) or agente.ciclo_sin_progreso(accion, elementos, estado_actual, traza):
-                feedback = "La misma acción ya se ejecutó, aunque su número haya cambiado. Elige un paso diferente."
-                if paso == MAX_PASOS:
-                    avisar("No pude avanzar después de reintentar.", expresion="confundido")
+                    tarea.guardar(os.path.join(marcas.OUT, 'tareas'))
+                    estado_actual['memoria_tarea'] = tarea.contexto()
+                    if tarea.actual:
+                        feedback = 'Etapa comprobada. Continúa con la etapa activa usando los datos conservados.'
+                        continue
+                    tipo = 'listo'
+                    if len(tarea.etapas) == 1:
+                        verificacion_previa = revision_etapa
+                if tipo == "listo":
+                    verificado = False
+                    if marcas.PERFIL.get("agente_estado"):
+                        verificacion = verificacion_previa or agente.verificar(objetivo, elementos, estado_actual, historial, marcas.preguntar_json, img)
+                        log.write("VERIFICACION: " + json.dumps(verificacion, ensure_ascii=False) + "\n")
+                        verificado = agente.final_confirmado(verificacion)
+                        if not verificado:
+                            tarea.etapas[-1]['estado'] = 'activa'
+                            tarea.etapas[-1]['evidencia'] = ''
+                            verificaciones_fallidas += 1
+                            feedback = "El objetivo NO está cumplido. Falta: " + verificacion.get("pendiente", "evidencia observable")
+                            if verificaciones_fallidas >= 3:
+                                tarea.terminar('incompleta', feedback)
+                                avisar("No pude comprobar que la tarea esté terminada.", expresion="confundido")
+                                return
+                            continue
+                    if historial and not compuesto and verificado and not marcas.PERFIL.get('vision_experimental'):
+                        guardar_exito(app_inicial, objetivo, [("dije lo que se veía en pantalla" if h.startswith("dije «") else h) for h in historial])
+                    capa.enviar(cmd="plan", hechos=len(historial), activo=False)
+                    capa.enviar(cmd="estado", valor="idle")
+                    tarea.terminar('completada')
                     return
-                continue
-            anterior = clave
-            actual = marcas.capturar_estado(marcas.nombre_ventana(), elementos)
-            if estado_actual.get("hwnd") and actual.get("hwnd") != estado_actual["hwnd"]:
-                avisar("Cambió la ventana activa. Me detuve para no actuar en otra aplicación.", expresion="confundido")
-                return
-            estado_anterior = estado_actual
-            inicio_historial = len(historial)
-            if tipo == 'preguntar':
-                tarea.terminar('requiere_datos', accion['texto'])
-                return
-            if tipo in ('recordar', 'importar_plan'):
-                try:
-                    if tipo == 'recordar':
-                        dato = tarea.recordar(accion['texto'], estado_actual)
-                        historial.append('conservé un dato observado de la etapa ' + str(dato['etapa']))
-                    else:
-                        tarea.importar_plan(accion['texto'], estado_actual)
-                        partes = [e['objetivo'] for e in tarea.etapas]
-                        compuesto = True
-                        historial.append('importé instrucciones literales de la fuente elegida por el usuario')
-                except (ValueError, TypeError) as error:
-                    feedback = str(error)
-                    continue
-                tarea.guardar(os.path.join(marcas.OUT, 'tareas'))
-            elif tipo == "clic":
-                elemento = elementos[accion["n"] - 1]
-                rect = (elemento[2], elemento[3], elemento[4], elemento[5])
-                punto = ((rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2)
-                texto = "Clic: " + etiqueta(elemento)
-                print(texto)
-                if capa.activa():
-                    capa.enviar(cmd="expresion", valor="concentrado", duracion=3.0)
-                    capa.enviar(cmd="senalar", rect=list(rect), texto=texto, duracion=3.0)
-                    time.sleep(VUELO_ESPERA)
-                    capa.enviar(cmd="cuenta", segundos=CUENTA_ATRAS)
-                    cancelado = esperar_cancelacion(CUENTA_ATRAS)
-                else:
-                    mostrar_senal(rect, punto, 1.4, texto)
-                    cancelado = acciones.esc_presionado()
-                if cancelado:
-                    capa.enviar(cmd="limpiar")
-                    avisar("Cancelado.")
+                if tipo == "nada":
+                    tarea.terminar('incompleta', accion.get('_evidencia', 'No hay un siguiente paso válido.'))
+                    avisar("No veo cómo hacerlo desde aquí.", expresion="confundido")
                     return
-                if accion.get('_revision_previa') and not marcas.formulario_sin_cambios(accion['_revision_previa'], *img.size):
-                    feedback = 'El formulario cambió o la recaptura es parcial. Revisa sus valores otra vez antes de confirmar.'
+                clave = agente.clave_accion(accion, elementos)
+                if agente.repetida_sin_progreso(accion, elementos, traza) or agente.ciclo_sin_progreso(accion, elementos, estado_actual, traza):
+                    feedback = "La misma acción ya se ejecutó, aunque su número haya cambiado. Elige un paso diferente."
+                    if paso == MAX_PASOS:
+                        avisar("No pude avanzar después de reintentar.", expresion="confundido")
+                        return
                     continue
-                control("mover")
-                if elemento[0] == 'VisualText':
-                    capa.enviar(cmd="ocultar")
+                anterior = clave
+                actual = marcas.capturar_estado(marcas.nombre_ventana(), elementos)
+                if estado_actual.get("hwnd") and actual.get("hwnd") != estado_actual["hwnd"]:
+                    avisar("Cambió la ventana activa. Me detuve para no actuar en otra aplicación.", expresion="confundido")
+                    return
+                estado_anterior = estado_actual
+                inicio_historial = len(historial)
+                if tipo == 'preguntar':
+                    tarea.terminar('requiere_datos', accion['texto'])
+                    return
+                if tipo in ('recordar', 'importar_plan'):
+                    try:
+                        if tipo == 'recordar':
+                            dato = tarea.recordar(accion['texto'], estado_actual)
+                            historial.append('conservé un dato observado de la etapa ' + str(dato['etapa']))
+                        else:
+                            tarea.importar_plan(accion['texto'], estado_actual)
+                            partes = [e['objetivo'] for e in tarea.etapas]
+                            compuesto = True
+                            historial.append('importé instrucciones literales de la fuente elegida por el usuario')
+                    except (ValueError, TypeError) as error:
+                        feedback = str(error)
+                        continue
+                    tarea.guardar(os.path.join(marcas.OUT, 'tareas'))
+                elif tipo == "clic":
+                    elemento = elementos[accion["n"] - 1]
+                    rect = (elemento[2], elemento[3], elemento[4], elemento[5])
+                    punto = ((rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2)
+                    texto = "Clic: " + etiqueta(elemento)
+                    print(texto)
                     if capa.activa():
-                        time.sleep(0.15)
-                if not marcas.validar_destino(elemento, estado_actual.get("hwnd")):
-                    feedback = "El control cambió después de observarlo. Identifica de nuevo el destino en la pantalla actual."
-                    anterior = None
-                    continue
-                if not acciones.mover_suave(punto[0], punto[1]):
-                    capa.enviar(cmd="limpiar")
-                    avisar("Cancelado.")
-                    return
-                capa.enviar(cmd="toque")
-                if not acciones.clic(punto[0], punto[1]):
-                    avisar("Cancelado.")
-                    return
-                capa.enviar(cmd="limpiar")
-                historial.append("clic en «" + etiqueta(elemento) + "»")
-                log.write("EJECUTADO: " + historial[-1] + "\n")
-            elif tipo == "escribir":
-                if accion.get('_escritura_visual'):
-                    if not marcas.validar_escritura_visual(accion, actual.get('hwnd')):
-                        feedback = 'La escritura visual perdió su ventana de laboratorio o la captura caducó.'
-                        continue
-                elif marcas.PERFIL.get("agente_estado"):
-                    foco = actual.get("foco", {})
-                    elegido = estado_actual.get("foco", {})
-                    if not foco.get("editable") or foco.get("secreto") or foco.get("nombre") != elegido.get("nombre"):
-                        feedback = "El foco cambió o no es editable. Observa de nuevo antes de escribir."
-                        anterior = None
-                        continue
-                print("Escribo:", accion["texto"])
-                capa.enviar(cmd="mensaje", texto="Escribo: " + accion["texto"][:30], duracion=1.5)
-                if esperar_cancelacion(0.6):
-                    avisar("Cancelado.")
-                    return
-                comprobado = marcas.capturar_estado(marcas.nombre_ventana(), elementos)
-                if (estado_actual.get("hwnd") and comprobado.get("hwnd") != estado_actual["hwnd"]) or (not accion.get('_escritura_visual') and comprobado.get("foco", {}).get("n") != actual.get("foco", {}).get("n")):
-                    avisar("Cambió el foco antes de escribir. Me detuve.", expresion="confundido")
-                    return
-                control("escribir")
-                if accion.get("reemplazar"):
-                    if not acciones.seleccionar_todo():
+                        capa.enviar(cmd="expresion", valor="concentrado", duracion=3.0)
+                        capa.enviar(cmd="senalar", rect=list(rect), texto=texto, duracion=3.0)
+                        time.sleep(VUELO_ESPERA)
+                        capa.enviar(cmd="cuenta", segundos=CUENTA_ATRAS)
+                        cancelado = esperar_cancelacion(CUENTA_ATRAS)
+                    else:
+                        mostrar_senal(rect, punto, 1.4, texto)
+                        cancelado = acciones.esc_presionado()
+                    if cancelado:
+                        capa.enviar(cmd="limpiar")
                         avisar("Cancelado.")
                         return
-                    seleccionado = marcas.capturar_estado(marcas.nombre_ventana(), elementos)
-                    if seleccionado.get('hwnd') != comprobado.get('hwnd') or (not accion.get('_escritura_visual') and (seleccionado.get('foco', {}).get('n') != comprobado.get('foco', {}).get('n') or seleccionado.get('foco', {}).get('secreto') or not seleccionado.get('foco', {}).get('editable'))):
-                        avisar('El foco cambió al seleccionar. Me detuve antes de escribir.', expresion='confundido')
+                    if accion.get('_revision_previa') and not marcas.formulario_sin_cambios(accion['_revision_previa'], *img.size):
+                        feedback = 'El formulario cambió o la recaptura es parcial. Revisa sus valores otra vez antes de confirmar.'
+                        continue
+                    control("mover")
+                    if elemento[0] == 'VisualText':
+                        capa.enviar(cmd="ocultar")
+                        if capa.activa():
+                            time.sleep(0.15)
+                    if not marcas.validar_destino(elemento, estado_actual.get("hwnd")):
+                        feedback = "El control cambió después de observarlo. Identifica de nuevo el destino en la pantalla actual."
+                        anterior = None
+                        continue
+                    if not acciones.mover_suave(punto[0], punto[1]):
+                        capa.enviar(cmd="limpiar")
+                        avisar("Cancelado.")
                         return
-                if not acciones.escribir(accion["texto"]):
-                    avisar("Cancelado durante la escritura.")
-                    return
-                historial.append("escribí «" + accion["texto"] + "»")
-                log.write("EJECUTADO: " + historial[-1] + "\n")
-            elif tipo == "decir":
-                tarea.registrar_respuesta(accion['texto'])
-                texto_d = accion["texto"][:300]
-                print("Digo:", texto_d)
-                capa.enviar(cmd="estado", valor="idle")
-                capa.enviar(cmd="expresion", valor="feliz", duracion=2.0)
-                capa.enviar(cmd="mensaje", texto=texto_d, duracion=min(14.0, 3.0 + len(texto_d) / 14.0))
-                historial.append("dije «" + texto_d + "»")
-                log.write("EJECUTADO: " + historial[-1] + "\n")
-                if esperar_cancelacion(min(7.0, 1.5 + len(texto_d) / 30.0)):
-                    avisar("Cancelado.")
-                    return
-            elif tipo == "tecla":
-                if accion.get('_revision_previa') and not marcas.formulario_sin_cambios(accion['_revision_previa'], *img.size):
-                    feedback = 'El formulario cambió o la recaptura es parcial. Revisa sus valores otra vez antes de confirmar.'
-                    continue
-                print("Tecla:", accion["tecla"])
-                control("escribir")
-                if not acciones.tecla(accion["tecla"]):
-                    avisar("Cancelado.")
-                    return
-                historial.append("pulsé la tecla " + accion["tecla"])
-                log.write("EJECUTADO: " + historial[-1] + "\n")
-            elif tipo == "esperar":
-                if esperar_cancelacion(1.0):
-                    avisar("Cancelado.")
-                    return
-                historial.append("esperé a que cargara la interfaz")
-                anterior = None
-            elif tipo == "desplazar":
-                if not acciones.desplazar(accion["direccion"]):
-                    avisar("Cancelado.")
-                    return
-                historial.append("desplacé la vista hacia " + accion["direccion"])
-            if len(historial) > inicio_historial:
-                pendiente = accion.get("_despues")
-                traza.append({"clave": repr(clave), "accion": historial[-1],
-                              "huella": agente.huella(estado_actual, elementos),
-                              'firma_operativa': agente.firma_operativa(accion, elementos, estado_actual),
-                              "evento": agente.evento_accion(accion, elementos, estado_actual),
-                              "objetivo": accion.get("_objetivo", ""), "_elementos": elementos})
-            log.flush()
+                    capa.enviar(cmd="toque")
+                    if not acciones.clic(punto[0], punto[1]):
+                        avisar("Cancelado.")
+                        return
+                    capa.enviar(cmd="limpiar")
+                    historial.append("clic en «" + etiqueta(elemento) + "»")
+                    log.write("EJECUTADO: " + historial[-1] + "\n")
+                elif tipo == "escribir":
+                    if accion.get('_escritura_visual'):
+                        if not marcas.validar_escritura_visual(accion, actual.get('hwnd')):
+                            feedback = 'La escritura visual perdió su ventana de laboratorio o la captura caducó.'
+                            continue
+                    elif marcas.PERFIL.get("agente_estado"):
+                        foco = actual.get("foco", {})
+                        elegido = estado_actual.get("foco", {})
+                        if not foco.get("editable") or foco.get("secreto") or foco.get("nombre") != elegido.get("nombre"):
+                            feedback = "El foco cambió o no es editable. Observa de nuevo antes de escribir."
+                            anterior = None
+                            continue
+                    print("Escribo:", accion["texto"])
+                    capa.enviar(cmd="mensaje", texto="Escribo: " + accion["texto"][:30], duracion=1.5)
+                    if esperar_cancelacion(0.6):
+                        avisar("Cancelado.")
+                        return
+                    comprobado = marcas.capturar_estado(marcas.nombre_ventana(), elementos)
+                    if (estado_actual.get("hwnd") and comprobado.get("hwnd") != estado_actual["hwnd"]) or (not accion.get('_escritura_visual') and comprobado.get("foco", {}).get("n") != actual.get("foco", {}).get("n")):
+                        avisar("Cambió el foco antes de escribir. Me detuve.", expresion="confundido")
+                        return
+                    control("escribir")
+                    if accion.get("reemplazar"):
+                        if not acciones.seleccionar_todo():
+                            avisar("Cancelado.")
+                            return
+                        seleccionado = marcas.capturar_estado(marcas.nombre_ventana(), elementos)
+                        if seleccionado.get('hwnd') != comprobado.get('hwnd') or (not accion.get('_escritura_visual') and (seleccionado.get('foco', {}).get('n') != comprobado.get('foco', {}).get('n') or seleccionado.get('foco', {}).get('secreto') or not seleccionado.get('foco', {}).get('editable'))):
+                            avisar('El foco cambió al seleccionar. Me detuve antes de escribir.', expresion='confundido')
+                            return
+                    if not acciones.escribir(accion["texto"]):
+                        avisar("Cancelado durante la escritura.")
+                        return
+                    historial.append("escribí «" + accion["texto"] + "»")
+                    log.write("EJECUTADO: " + historial[-1] + "\n")
+                elif tipo == "decir":
+                    tarea.registrar_respuesta(accion['texto'])
+                    texto_d = accion["texto"][:300]
+                    print("Digo:", texto_d)
+                    capa.enviar(cmd="estado", valor="idle")
+                    capa.enviar(cmd="expresion", valor="feliz", duracion=2.0)
+                    capa.enviar(cmd="mensaje", texto=texto_d, duracion=min(14.0, 3.0 + len(texto_d) / 14.0))
+                    historial.append("dije «" + texto_d + "»")
+                    log.write("EJECUTADO: " + historial[-1] + "\n")
+                    if esperar_cancelacion(min(7.0, 1.5 + len(texto_d) / 30.0)):
+                        avisar("Cancelado.")
+                        return
+                elif tipo == "tecla":
+                    if accion.get('_revision_previa') and not marcas.formulario_sin_cambios(accion['_revision_previa'], *img.size):
+                        feedback = 'El formulario cambió o la recaptura es parcial. Revisa sus valores otra vez antes de confirmar.'
+                        continue
+                    print("Tecla:", accion["tecla"])
+                    control("escribir")
+                    if not acciones.tecla(accion["tecla"]):
+                        avisar("Cancelado.")
+                        return
+                    historial.append("pulsé la tecla " + accion["tecla"])
+                    log.write("EJECUTADO: " + historial[-1] + "\n")
+                elif tipo == "esperar":
+                    if esperar_cancelacion(1.0):
+                        avisar("Cancelado.")
+                        return
+                    historial.append("esperé a que cargara la interfaz")
+                    anterior = None
+                elif tipo == "desplazar":
+                    if not acciones.desplazar(accion["direccion"]):
+                        avisar("Cancelado.")
+                        return
+                    historial.append("desplacé la vista hacia " + accion["direccion"])
+                if len(historial) > inicio_historial:
+                    pendiente = accion.get("_despues")
+                    traza.append({"clave": repr(clave), "accion": historial[-1],
+                                  "huella": agente.huella(estado_actual, elementos),
+                                  'firma_operativa': agente.firma_operativa(accion, elementos, estado_actual),
+                                  "evento": agente.evento_accion(accion, elementos, estado_actual),
+                                  "objetivo": accion.get("_objetivo", ""), "_elementos": elementos})
+                log.flush()
         avisar("Llegué al máximo de pasos.", expresion="triste")
         tarea.terminar('incompleta', 'Se alcanzó el límite de acciones antes de completar el pedido.')
 

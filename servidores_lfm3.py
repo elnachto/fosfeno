@@ -9,6 +9,8 @@ import time
 import urllib.error
 import urllib.request
 
+import motor_ia
+
 BASE = Path(__file__).resolve().parent
 RAIZ = BASE.parent
 RUNTIME = RAIZ / "llama-lfm3-b11946"
@@ -17,6 +19,13 @@ SERVIDORES = [
     {"nombre": "Nemotron", "puerto": 8095, "alias": "fosfeno-nemotron", "archivo": "../bolt/NVIDIA-Nemotron-3.5-Bolt-E4B-UD-Q4_K_XL.gguf", "vision": "../bolt/mmproj-F16.gguf"},
     {"nombre": "visión", "puerto": 8096, "alias": "fosfeno-lfm3", "archivo": "LFM3-VL-2B-Q8_0.gguf", "vision": "mmproj-LFM3-VL-2B-F16.gguf"},
 ]
+
+
+def opciones_razonamiento(servidor):
+    limite = motor_ia.PERFILES["nemotron"].get("presupuesto_razonamiento")
+    if servidor["puerto"] == 8095 and limite is not None:
+        return ["--reasoning-budget", str(limite)]
+    return []
 
 
 def estado(servidor):
@@ -58,6 +67,7 @@ def main():
                        "-c", "16384", "-np", "1", "-fa", "on", "--jinja", "--host", "127.0.0.1",
                        "--port", str(servidor["puerto"]), "--temp", "0.1", "--top-p", "1", "--top-k", "50",
                        "--min-p", "0", "--repeat-penalty", "1.1", "--no-reasoning-preserve"]
+            comando.extend(opciones_razonamiento(servidor))
             if servidor.get("vision"):
                 vision = MODELOS / servidor["vision"]
                 if not vision.is_file():

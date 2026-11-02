@@ -13,6 +13,7 @@ import acciones
 import agente
 import marcas
 import motor_ia
+import rendimiento
 
 
 CASOS = [
@@ -57,6 +58,7 @@ class AplicacionSimulada:
         self.mapa = []
         self.combo_abierto = None
 
+    @rendimiento.medir('captura_percepcion_s')
     def observar(self):
         controles = [(k, rol, nombre) for k, rol, nombre, _ in self.caso["campos"]]
         controles += [("enviar", "Button", self.caso["boton"]), ("ayuda", "Button", "Ayuda")]
@@ -176,48 +178,50 @@ def ejecutar_caso(caso, motor, semilla, max_pasos=14, referencias=None):
                  "falsos_listo_propuestos": 0, "falso_exito_aceptado": False}
     try:
         for numero in range(max_pasos):
-            elementos, estado = app.observar()
-            accion = agente.continuar_pendiente(pendiente, estado, elementos)
-            pendiente = None
-            if accion is None:
-                accion, dato, intentos = agente.proponer(caso["objetivo"], elementos, estado, historial,
-                    marcas.preguntar_json, acciones.normalizar_tecla, traza=traza, feedback=feedback,
-                    referencias=referencias)
-            feedback = ""
-            registro = {"numero": numero + 1, "accion": accion, "estado": copy.deepcopy(estado)}
-            pasos.append(registro)
-            if accion["tipo"] in ("listo", "nada"):
-                verificacion = agente.verificar(caso["objetivo"], elementos, estado, historial, marcas.preguntar_json)
-                registro["verificacion"] = verificacion
-                if accion['tipo'] == 'listo' and not app.cumplida(): resultado["falsos_listo_propuestos"] += 1
-                if agente.final_confirmado(verificacion):
-                    resultado["correcto"] = app.cumplida()
-                    resultado["falso_exito_aceptado"] = not resultado["correcto"]
-                    resultado["motivo"] = "completado" if resultado["correcto"] else "declaró éxito sin cumplir el objetivo real"
+            with rendimiento.paso(numero + 1, "simulacion", f"{motor}:{semilla}:{caso['id']}") as medicion:
+                elementos, estado = app.observar()
+                accion = agente.continuar_pendiente(pendiente, estado, elementos)
+                pendiente = None
+                if accion is None:
+                    accion, dato, intentos = agente.proponer(caso["objetivo"], elementos, estado, historial,
+                        marcas.preguntar_json, acciones.normalizar_tecla, traza=traza, feedback=feedback,
+                        referencias=referencias)
+                medicion["accion"] = accion
+                feedback = ""
+                registro = {"numero": numero + 1, "accion": accion, "estado": copy.deepcopy(estado), "tiempos": medicion}
+                pasos.append(registro)
+                if accion["tipo"] in ("listo", "nada"):
+                    verificacion = agente.verificar(caso["objetivo"], elementos, estado, historial, marcas.preguntar_json)
+                    registro["verificacion"] = verificacion
+                    if accion['tipo'] == 'listo' and not app.cumplida(): resultado["falsos_listo_propuestos"] += 1
+                    if agente.final_confirmado(verificacion):
+                        resultado["correcto"] = app.cumplida()
+                        resultado["falso_exito_aceptado"] = not resultado["correcto"]
+                        resultado["motivo"] = "completado" if resultado["correcto"] else "declaró éxito sin cumplir el objetivo real"
+                        break
+                    if accion['tipo'] == 'nada':
+                        resultado['motivo'] = 'no pudo continuar y no se confirmó el objetivo'
+                        break
+                    feedback = "Verificación: " + str(verificacion.get("pendiente", "Falta evidencia"))
+                    continue
+                if accion["tipo"] == "nada":
+                    resultado["motivo"] = "no pudo continuar"
                     break
-                if accion['tipo'] == 'nada':
-                    resultado['motivo'] = 'no pudo continuar y no se confirmó el objetivo'
-                    break
-                feedback = "Verificación: " + str(verificacion.get("pendiente", "Falta evidencia"))
-                continue
-            if accion["tipo"] == "nada":
-                resultado["motivo"] = "no pudo continuar"
-                break
-            clave = repr(agente.clave_accion(accion, elementos))
-            if agente.repetida_sin_progreso(accion, elementos, traza):
-                feedback = "No se ejecutó una acción repetida sin progreso. Elige un paso distinto."
-                continue
-            app.aplicar(accion)
-            elementos_despues, estado_despues = app.observar()
-            if accion["tipo"] == "clic": texto = "clic en «" + elementos[accion["n"] - 1][1] + "»"
-            elif accion["tipo"] == "escribir": texto = ("reemplacé por «" if accion.get("reemplazar") else "escribí «") + accion["texto"] + "»"
-            elif accion["tipo"] == "tecla": texto = "pulsé la tecla " + accion["tecla"]
-            else: texto = accion["tipo"]
-            historial.append(texto)
-            traza.append({"clave": clave, "accion": texto, "resultado": {
-                "cambio_observable": agente.huella(estado, elementos) != agente.huella(estado_despues, elementos_despues),
-                "foco": estado_despues["foco"], "ventana": estado_despues["ventana"]}})
-            pendiente = accion.get("_despues")
+                clave = repr(agente.clave_accion(accion, elementos))
+                if agente.repetida_sin_progreso(accion, elementos, traza):
+                    feedback = "No se ejecutó una acción repetida sin progreso. Elige un paso distinto."
+                    continue
+                app.aplicar(accion)
+                elementos_despues, estado_despues = app.observar()
+                if accion["tipo"] == "clic": texto = "clic en «" + elementos[accion["n"] - 1][1] + "»"
+                elif accion["tipo"] == "escribir": texto = ("reemplacé por «" if accion.get("reemplazar") else "escribí «") + accion["texto"] + "»"
+                elif accion["tipo"] == "tecla": texto = "pulsé la tecla " + accion["tecla"]
+                else: texto = accion["tipo"]
+                historial.append(texto)
+                traza.append({"clave": clave, "accion": texto, "resultado": {
+                    "cambio_observable": agente.huella(estado, elementos) != agente.huella(estado_despues, elementos_despues),
+                    "foco": estado_despues["foco"], "ventana": estado_despues["ventana"]}})
+                pendiente = accion.get("_despues")
         else:
             resultado["motivo"] = "límite de pasos"
     except Exception as error:
@@ -227,6 +231,11 @@ def ejecutar_caso(caso, motor, semilla, max_pasos=14, referencias=None):
     resultado.update(segundos=round(time.monotonic() - inicio, 3), pasos=len(pasos), objetivo_logrado=app.cumplida(),
         objetivo=caso["objetivo"], valor_final=app.enviado, traza=pasos,
         peticiones=copy.deepcopy(marcas.PETICIONES[peticiones_inicio:]))
+    resultado.update(rendimiento.resumir_consultas(resultado["peticiones"]))
+    resultado["tokens_por_paso"] = (round(resultado["tokens_generados"] / max(1, len(pasos)), 3)
+                                    if resultado["tokens_generados"] is not None else None)
+    resultado["tokens_por_consulta"] = (round(resultado["tokens_generados"] / max(1, resultado["consultas"]), 3)
+                                        if resultado["tokens_generados"] is not None else None)
     esperados = motor_ia.PERFILES[motor]
     urls = {esperados['url'], esperados.get('planificador_url', esperados['url'])}
     modelos = {esperados['modelo_api'], esperados.get('planificador_modelo', esperados['modelo_api'])}
@@ -266,6 +275,13 @@ def main():
             resultado = ejecutar_caso(caso, motor, semilla)
             resultados.append(resultado)
             (args.salida / 'resultados.json').write_text(json.dumps(resultados, ensure_ascii=False, indent=2), encoding='utf-8')
+            print(f"{motor} {caso['id']} semilla={semilla}: "
+                  f"{'correcta' if resultado['correcto'] else 'FALLO'}, "
+                  f"{resultado['pasos']} pasos, {resultado['segundos']:.3f} s, "
+                  f"{resultado['tokens_generados']} tokens, {resultado['tokens_por_consulta']} tokens/consulta, "
+                  f"captura={sum(p['tiempos']['captura_percepcion_s'] for p in resultado['traza']):.3f} s, "
+                  f"prompt={resultado['prompt_servidor_s']:.3f} s, generación={resultado['generacion_s']:.3f} s",
+                  flush=True)
             print(json.dumps({k: v for k, v in resultado.items() if k not in ('traza', 'peticiones', 'objetivo')}, ensure_ascii=True), flush=True)
     resumen = {}
     for motor in motores:
@@ -275,7 +291,13 @@ def main():
             'falsos_exitos': sum(r['falso_exito_aceptado'] for r in grupo),
             'mediana_segundos': round(statistics.median(r['segundos'] for r in grupo), 3),
             'mediana_exitos_segundos': round(statistics.median(r['segundos'] for r in grupo if r['correcto']), 3) if any(r['correcto'] for r in grupo) else None,
-            'peticiones': sum(len(r['peticiones']) for r in grupo)}
+            'peticiones': sum(len(r['peticiones']) for r in grupo),
+            'tokens_por_consulta': round(sum(r['tokens_generados'] for r in grupo) / sum(len(r['peticiones']) for r in grupo), 3)
+                                   if all(r['tokens_generados'] is not None for r in grupo) else None,
+            'media_pasos': round(statistics.mean(r['pasos'] for r in grupo), 3),
+            'media_segundos': round(statistics.mean(r['segundos'] for r in grupo), 3),
+            'tokens_por_paso': round(sum(r['tokens_generados'] for r in grupo) / sum(r['pasos'] for r in grupo), 3)
+                              if all(r['tokens_generados'] is not None for r in grupo) else None}
     (args.salida / 'resumen.json').write_text(json.dumps(resumen, ensure_ascii=False, indent=2), encoding='utf-8')
     print(json.dumps(resumen, ensure_ascii=True), flush=True)
 

@@ -9,6 +9,7 @@ from urllib.parse import unquote, urlsplit
 import re
 import sys
 import time
+import warnings
 
 import mss
 import requests
@@ -19,6 +20,8 @@ import acciones
 import memoria
 import motor_ia
 import agente
+import rendimiento
+import salida_json
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 MOTOR, PERFIL = motor_ia.cargar()
@@ -63,6 +66,7 @@ ESTADO_UI = {}
 TEXTO_UI = []
 DETALLES_UI = {}
 PETICIONES = []
+SERVIDORES_RAZONAMIENTO_AVISADOS = set()
 
 
 def carpeta_explorador(hwnd):
@@ -519,6 +523,7 @@ def identificar_foco(elementos, nombre, rol, rect, editable):
     return None, 'sin_coincidencia'
 
 
+@rendimiento.medir('captura_percepcion_s')
 def capturar_estado(titulo, elementos, ventana=None):
     foco = {"n": None, "nombre": "", "rol": "", "editable": False, "secreto": False, "valor": ""}
     try:
@@ -589,6 +594,7 @@ def capturar_estado(titulo, elementos, ventana=None):
             "detalles": {str(n): DETALLES_UI[e] for n, e in enumerate(elementos, 1) if e in DETALLES_UI}}
 
 
+@rendimiento.medir('captura_percepcion_s')
 def formulario_sin_cambios(firma, ancho, alto):
     """Recaptura valores UIA; capturar_estado solo refresca el foco y usa la lista previa."""
     _, elementos, truncado = reunir(ancho, alto)
@@ -912,18 +918,83 @@ def preguntar_texto(texto, max_tokens=900, gramatica=None):
     return leer_respuesta(r.json())
 
 
+def comprobar_presupuesto_razonamiento(url, modelo, datos):
+    perfil = motor_ia.PERFILES["nemotron"]
+    limite = perfil.get("presupuesto_razonamiento")
+    if modelo != perfil["modelo_api"] or limite is None:
+        return None
+    mensaje = ((datos.get("choices") or [{}])[0]).get("message", {})
+    razonamiento = mensaje.get("reasoning_content") or ""
+    if not razonamiento:
+        return 0
+    clave = (url, limite)
+    if clave in SERVIDORES_RAZONAMIENTO_AVISADOS:
+        return None
+    try:
+        respuesta = requests.post(url.rsplit("/v1/", 1)[0] + "/tokenize", json={
+            "content": razonamiento, "add_special": False, "parse_special": True}, timeout=5)
+        respuesta.raise_for_status()
+        cantidad = len(respuesta.json()["tokens"])
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        SERVIDORES_RAZONAMIENTO_AVISADOS.add(clave)
+        warnings.warn("Aviso: Nemotron devuelve razonamiento y no pude comprobar su presupuesto. "
+                      "Reinicia su servidor con el lanzador actualizado.", RuntimeWarning, stacklevel=2)
+        return None
+    if cantidad > limite + 2:
+        SERVIDORES_RAZONAMIENTO_AVISADOS.add(clave)
+        warnings.warn("Aviso: el servidor Nemotron generó " + str(cantidad)
+                      + " tokens de razonamiento; el presupuesto configurado es " + str(limite)
+                      + ". Puede estar ejecutándose un servidor antiguo. Ciérralo y ejecuta "
+                      "python servidores_lfm3.py --motor nemotron.", RuntimeWarning, stacklevel=2)
+    return cantidad
+
+
+def esquema_salida_json(modelo, esquema):
+    perfil = motor_ia.PERFILES["nemotron"]
+    propiedades = esquema.get("properties", {})
+    campos = {"accion", "n", "texto", "reemplazar", "evidencia", "objetivo_pendiente"}
+    if (modelo != perfil["modelo_api"] or not perfil.get("observacion_primero")
+            or not campos.issubset(propiedades)):
+        return esquema
+    primeros = ["evidencia", "objetivo_pendiente"]
+    orden = primeros + [k for k in propiedades if k not in primeros]
+    obligatorios = esquema.get("required", [])
+    return {**esquema, "properties": {k: propiedades[k] for k in orden},
+            "required": [k for k in orden if k in obligatorios]}
+
+
+def limite_salida_json(esquema):
+    campos = esquema.get("properties", {})
+    if "accion" in campos and campos.get("evidencia", {}).get("maxLength", 1000) <= 80:
+        return 640
+    if {"cumplido", "evidencia", "pendiente"}.issubset(campos):
+        return 640
+    return 1200
+
+
+def formato_salida_json(modelo, esquema):
+    esquema = esquema_salida_json(modelo, esquema)
+    if (os.environ.get("FOSFENO_GBNF_EXPERIMENTAL") == "1"
+            and modelo == motor_ia.PERFILES["nemotron"]["modelo_api"]):
+        gramatica = salida_json.compacta(esquema)
+        if gramatica is not None:
+            return {"grammar": gramatica}
+    return {"response_format": {"type": "json_schema", "json_schema": {
+        "name": "respuesta_fosfeno", "strict": True, "schema": esquema}}}
+
+
 def _consultar_json(url, modelo, instruccion, texto, esquema, img=None):
-    contenido = [{"type": "text", "text": texto}]
-    if img is not None:
-        contenido.insert(0, {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + encode(img)}})
-    payload = {"model": modelo, **PERFIL["muestreo"], **PERFIL.get("opciones_api", {}),
-               "max_tokens": 1200, "messages": [{"role": "system", "content": instruccion},
-                                                {"role": "user", "content": contenido}],
-               "response_format": {"type": "json_schema", "json_schema": {
-                   "name": "respuesta_fosfeno", "strict": True, "schema": esquema}}}
-    if PERFIL.get("semilla") is not None:
-        payload["seed"] = PERFIL["semilla"]
-    payload["cache_prompt"] = PERFIL.get("cache_prompt", True)
+    with rendimiento.fase('prompt_local_s'):
+        contenido = [{"type": "text", "text": texto}]
+        if img is not None:
+            contenido.insert(0, {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + encode(img)}})
+        payload = {"model": modelo, **PERFIL["muestreo"], **PERFIL.get("opciones_api", {}),
+                   "max_tokens": limite_salida_json(esquema), "messages": [{"role": "system", "content": instruccion},
+                                                    {"role": "user", "content": contenido}],
+                   **formato_salida_json(modelo, esquema)}
+        if PERFIL.get("semilla") is not None:
+            payload["seed"] = PERFIL["semilla"]
+        payload["cache_prompt"] = PERFIL.get("cache_prompt", True)
     for intento in range(2):
         inicio = time.monotonic()
         try:
@@ -935,7 +1006,11 @@ def _consultar_json(url, modelo, instruccion, texto, esquema, img=None):
         opcion = (datos.get("choices") or [{}])[0]
         PETICIONES.append({"modelo": modelo, "modelo_servidor": datos.get("model"), "url": url, "segundos": time.monotonic() - inicio,
                            "vision": img is not None, "uso": datos.get("usage", {}),
-                           "fin": opcion.get("finish_reason"), "timings": datos.get("timings", {})})
+                           "fin": opcion.get("finish_reason"), "timings": datos.get("timings", {}),
+                           "max_tokens": payload["max_tokens"]})
+        PETICIONES[-1]["tokens_razonamiento"] = comprobar_presupuesto_razonamiento(url, modelo, datos)
+        rendimiento.registrar_consulta(PETICIONES[-1])
+        rendimiento.registrar_crudo(url, payload, esquema, datos)
         del PETICIONES[:-500]
         if opcion.get("finish_reason") == "length" and intento == 0:
             payload["max_tokens"] = 2400

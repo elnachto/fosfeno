@@ -6,6 +6,7 @@ import json
 import re
 import unicodedata
 import precondiciones
+import rendimiento
 
 ROLES_EDITABLES = ("Edit", "Document", "Spinner")
 MAX_PASOS = 36
@@ -112,14 +113,14 @@ def esquema(total):
     return {
         "type": "object", "additionalProperties": False,
         "properties": {
-            "evidencia": {"type": "string", "maxLength": 240},
-            "objetivo_pendiente": {"type": "string", "maxLength": 180},
             "accion": {"type": "string", "enum": ["CLIC", "ESCRIBIR", "TECLA", "DECIR", "ESPERAR", "DESPLAZAR", "LISTO", "NADA", "RECORDAR", "SIGUIENTE", "PREGUNTAR", "IMPORTAR_PLAN"]},
             "n": {"type": "integer", "minimum": 0, "maximum": total},
             "texto": {"type": "string", "maxLength": 1200},
             "reemplazar": {"type": "boolean"},
+            "evidencia": {"type": "string", "maxLength": 80},
+            "objetivo_pendiente": {"type": "string", "maxLength": 60},
         },
-        "required": ["objetivo_pendiente", "accion", "n", "texto", "evidencia", "reemplazar"],
+        "required": ["accion", "n", "texto", "reemplazar", "evidencia", "objetivo_pendiente"],
     }
 
 
@@ -273,14 +274,17 @@ To format EXISTING text, first select the intended text range. An empty text sel
 formato_documento describes the whole document range, not the insertion caret. Use that evidence when available; a selected toolbar button alone does not prove the title is bold.
 Paragraph alignment applies to the current paragraph. Before typing a new normal paragraph, ensure bold is off and alignment is left.
 cursor_parrafo is the 1-based paragraph containing the insertion point. texto_antes_cursor locates that insertion point. Navigate to or select the intended paragraph before changing its alignment; a dialog affects the CURRENT paragraph, not whichever paragraph the user mentioned.
-Output keys: evidencia (observed state and the reason for the NEXT action), objetivo_pendiente (one remaining goal),
-accion (CLIC/ESCRIBIR/TECLA/DECIR/ESPERAR/DESPLAZAR/LISTO/NADA/RECORDAR/SIGUIENTE/PREGUNTAR/IMPORTAR_PLAN), n (control id or 0), texto (literal text/shortcut, JSON for memory/import, or empty).
+Output keys in order: accion, n, texto, reemplazar, evidencia, objetivo_pendiente.
+accion is CLIC/ESCRIBIR/TECLA/DECIR/ESPERAR/DESPLAZAR/LISTO/NADA/RECORDAR/SIGUIENTE/PREGUNTAR/IMPORTAR_PLAN.
+n is the control id or 0; texto is literal text/shortcut, JSON for memory/import, or empty.
+evidencia cites the observed fact needed for the next action in at most 80 characters.
+objetivo_pendiente states one remaining goal in at most 60 characters. Use brief phrases, not explanations.
 Example: user asks to write a note, and its editor already has focus:
-{"evidencia":"The editor is focused and empty; enter the requested text.","objetivo_pendiente":"Write the note","accion":"ESCRIBIR","n":0,"texto":"Requested note text"}
+{"accion":"ESCRIBIR","n":0,"texto":"Requested note text","reemplazar":false,"evidencia":"Editor focused and empty.","objetivo_pendiente":"Write the note"}
 Example: a new form was opened and the Name input (id=8) is not focused:
-{"evidencia":"The form is open. The Name input must receive focus.","objetivo_pendiente":"Fill the name","accion":"CLIC","n":8,"texto":""}
+{"accion":"CLIC","n":8,"texto":"","reemplazar":false,"evidencia":"Name input is not focused.","objetivo_pendiente":"Fill the name"}
 Example: a search query was typed and still needs submission:
-{"evidencia":"The query is in the search input. Submit it.","objetivo_pendiente":"Run the search","accion":"TECLA","n":0,"texto":"enter"}
+{"accion":"TECLA","n":0,"texto":"enter","reemplazar":false,"evidencia":"Query is in the search input.","objetivo_pendiente":"Run the search"}
 """
 
 INSTRUCCION_VISUAL_PILOTO = next(linea for linea in INSTRUCCION.splitlines() if linea.startswith('VisualText IDs'))
@@ -358,6 +362,7 @@ def convertir(dato, elementos, normalizar_tecla, permitir_visual=False):
     return accion
 
 
+@rendimiento.medir('prompt_local_s')
 def prompt_acotado(objetivo, observacion, referencias, partes, problemas):
     """Presupuesto de caracteres, no estimación exacta de tokens del modelo."""
     obs = copy.deepcopy(observacion)

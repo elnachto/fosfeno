@@ -8,6 +8,8 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 PERFILES = {
     "nemotron": {
         "nombre": "Nemotron 3.5 Bolt E4B",
+        "presupuesto_razonamiento": 64,
+        "observacion_primero": True,
         "agente_estado": True,
         "url": "http://127.0.0.1:8095/v1/chat/completions",
         "modelo_api": "fosfeno-nemotron",
