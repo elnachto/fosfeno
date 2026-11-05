@@ -11,6 +11,7 @@ import requests
 
 ACTUAL = ContextVar('rendimiento_paso', default=None)
 FASES = ContextVar('rendimiento_fases', default=frozenset())
+ACTIVIDAD = ContextVar('rendimiento_actividad', default=None)
 ULTIMOS = {}
 CRUDO_CONTADOR = 0
 RUTA_CRUDO = Path(__file__).resolve().parent / "salidas" / "rapidez" / "crudo"
@@ -33,6 +34,32 @@ def registrar_consulta(peticion):
     actual = ACTUAL.get()
     if actual is not None:
         actual['peticiones'].append(dict(peticion))
+
+
+@contextmanager
+def actividad(nombre):
+    actual = ACTUAL.get()
+    if actual is None:
+        yield
+        return
+    padre = ACTIVIDAD.get()
+    marco = {'hijos': 0.0}
+    token = ACTIVIDAD.set(marco)
+    inicio = time.perf_counter()
+    try:
+        yield
+    finally:
+        segundos = time.perf_counter() - inicio
+        ACTIVIDAD.reset(token)
+        fases = actual.setdefault('fases_exclusivas_s', {})
+        fases[nombre] = fases.get(nombre, 0.0) + max(0.0, segundos - marco['hijos'])
+        if padre is not None:
+            padre['hijos'] += segundos
+
+
+def llamar(nombre, funcion, *args, **kwargs):
+    with actividad(nombre):
+        return funcion(*args, **kwargs)
 
 
 @contextmanager
@@ -68,6 +95,7 @@ def medir(nombre):
 def paso(numero, origen, identificador='', captura_inicial_s=0.0):
     dato = {'paso': numero, 'origen': origen, 'identificador': identificador,
             'captura_percepcion_s': captura_inicial_s, 'prompt_local_s': 0.0,
+            'captura_inicial_fuera_paso_s': captura_inicial_s, 'fases_exclusivas_s': {},
             'accion': None, 'peticiones': []}
     token = ACTUAL.set(dato)
     inicio = time.perf_counter()
@@ -79,6 +107,10 @@ def paso(numero, origen, identificador='', captura_inicial_s=0.0):
     finally:
         dato['segundos'] = time.perf_counter() - inicio
         dato.update(resumir_consultas(dato['peticiones']))
+        dato['segundos_con_captura_inicial_s'] = dato['segundos'] + captura_inicial_s
+        dato['no_atribuido_s'] = max(0.0, dato['segundos'] - sum(dato['fases_exclusivas_s'].values()))
+        for nombre in ('espera_antes_accion_s', 'ejecucion_accion_s', 'espera_posterior_s', 'reobservacion_s'):
+            dato[nombre] = dato['fases_exclusivas_s'].get(nombre, 0.0)
         ACTUAL.reset(token)
         ruta = Path(os.environ.get('FOSFENO_TIEMPOS_LOG') or
                     Path(__file__).resolve().parent / 'salidas' / 'rapidez' / 'pasos.jsonl')

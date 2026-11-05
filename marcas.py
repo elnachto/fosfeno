@@ -1018,7 +1018,7 @@ def _consultar_json(url, modelo, instruccion, texto, esquema, img=None):
     for intento in range(2):
         inicio = time.monotonic()
         try:
-            r = requests.post(url, json=payload, timeout=120)
+            r = rendimiento.llamar('consulta_modelo_s', requests.post, url, json=payload, timeout=120)
             r.raise_for_status()
             datos = r.json()
         except (requests.RequestException, ValueError) as error:
@@ -1028,7 +1028,7 @@ def _consultar_json(url, modelo, instruccion, texto, esquema, img=None):
                            "vision": img is not None, "uso": datos.get("usage", {}),
                            "fin": opcion.get("finish_reason"), "timings": datos.get("timings", {}),
                            "max_tokens": payload["max_tokens"]})
-        PETICIONES[-1]["tokens_razonamiento"] = comprobar_presupuesto_razonamiento(url, modelo, datos)
+        PETICIONES[-1]["tokens_razonamiento"] = rendimiento.llamar('tokenizacion_razonamiento_s', comprobar_presupuesto_razonamiento, url, modelo, datos)
         rendimiento.registrar_consulta(PETICIONES[-1])
         rendimiento.registrar_crudo(url, payload, esquema, datos)
         del PETICIONES[:-500]

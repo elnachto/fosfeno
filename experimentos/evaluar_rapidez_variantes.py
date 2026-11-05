@@ -143,7 +143,7 @@ def ejecutar_hijo(args):
         'variante': args.variante, 'config': config, 'semillas': args.semillas,
         'fuentes': fuentes(), 'prompt_modificado': False,
         'esquema_accion': agente.esquema(3)}, ensure_ascii=False, indent=2), encoding='utf-8')
-    sys.argv = ['evaluacion.py', '--motores', 'nemotron', '--semillas', args.semillas,
+    sys.argv = ['evaluacion.py', '--suite', 'original', '--motores', 'nemotron', '--semillas', args.semillas,
                 '--salida', str(args.salida)]
     evaluacion.main()
 
