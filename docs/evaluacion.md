@@ -8,7 +8,7 @@
 
    ```powershell
    python -m unittest discover -s tests -v
-   python evaluacion.py --motores lfm3,nemotron --semillas 42,99 --salida salidas/comparacion
+   python evaluacion.py --suite original --motores lfm3,nemotron --semillas 42,99 --salida salidas/comparacion
    ```
 
 3. Revisa `resumen.json`, `resultados.json` y `manifiesto.json` en la carpeta
@@ -17,13 +17,22 @@
 
 ## Qué se mide
 
-Las ocho tareas simuladas cubren notas, sustitución de valores de un contacto,
+La suite original (`--suite original`) conserva las ocho tareas de notas, sustitución de valores de un contacto,
 conversación nueva con envío, búsqueda y espera de resultados, navegación a
 una URL en una pestaña nueva, casillas, selectores y cantidades numéricas.
 Los identificadores cambian durante la tarea. El estado final se comprueba
 con el entorno de prueba, independientemente de lo que afirme el modelo.
 
-- `objetivo_logrado`: el entorno confirma los valores y efectos solicitados.
+Por defecto, `--suite ampliado` incluye 20 objetivos distintos y produce 40
+ejecuciones con las semillas 42 y 99. Añade Inicio, barra de tareas, creación
+de carpeta, calculadora y transferencia, editor inaccesible, guía con un clic,
+tareas entre ventanas y preguntas sin acciones. El [informe ampliado](evaluacion-ampliada.md)
+detalla los oráculos, resultados y fallos conocidos. Las entradas Win32 están
+bloqueadas durante la evaluación; la guía opera contra controles en memoria.
+
+- `objetivo_logrado`: el entorno confirma los valores y efectos solicitados;
+  en el caso de rechazo seguro confirma NADA sin ejecución, y en preguntas
+  confirma la respuesta contra datos sintéticos visibles.
 - `correcto`: además de lograrlo, el controlador terminó con verificación positiva.
 - `falso_exito_aceptado`: el controlador declaró éxito pero el entorno demuestra
   que faltaba parte del objetivo. Es un fallo aunque la respuesta parezca convincente.
@@ -36,6 +45,9 @@ la instalación de referencia. Las consultas de evaluación desactivan la caché
 del prompt y se envían en serie. El orden de motores/casos se mezcla de forma
 reproducible. Las peticiones guardan tanto el modelo solicitado como el que
 el servidor informa haber usado, para detectar comparaciones mal encaminadas.
+Las rutas de producción de GUIAR/PREGUNTA no envían semilla ni desactivan
+explícitamente la caché; se conservan así en sus simulaciones y se registra
+la semilla realmente enviada. En esos casos, 42/99 determina orden e IDs.
 
 ## Límites de la comparación
 

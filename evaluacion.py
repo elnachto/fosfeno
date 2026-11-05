@@ -14,6 +14,9 @@ import agente
 import marcas
 import motor_ia
 import rendimiento
+import tareas
+from entornos_evaluacion import CASOS_NUEVOS, EscritorioSimulado, sin_entrada_nativa
+from interacciones_evaluacion import ejecutar_interaccion
 
 
 CASOS = [
@@ -38,6 +41,8 @@ CASOS = [
      "campos": [("producto", "Edit", "Producto", ""), ("cantidad", "Spinner", "Cantidad", "1")],
      "esperado": {"producto": "Cuadernos A5", "cantidad": "7"}, "boton": "Confirmar simulación"},
 ]
+CASOS_ORIGINALES = copy.deepcopy(CASOS)
+CASOS += CASOS_NUEVOS
 
 
 class AplicacionSimulada:
@@ -166,10 +171,15 @@ class AplicacionSimulada:
 
 
 def ejecutar_caso(caso, motor, semilla, max_pasos=14, referencias=None):
+    if caso.get('entorno') in ('pregunta', 'guia'):
+        return ejecutar_interaccion(caso, motor, semilla)
     perfil_anterior = marcas.PERFIL
     marcas.PERFIL = copy.deepcopy(motor_ia.PERFILES[motor])
     marcas.PERFIL.update(semilla=semilla, cache_prompt=False)
-    app = AplicacionSimulada(caso, semilla)
+    ampliado = bool(caso.get('entorno'))
+    app = EscritorioSimulado(caso, semilla) if ampliado else AplicacionSimulada(caso, semilla)
+    tarea = tareas.SesionTarea(caso['objetivo'], caso['etapas']) if caso.get('etapas') else None
+    max_pasos = 22 if ampliado else max_pasos
     historial, traza, pasos = [], [], []
     pendiente, feedback = None, ""
     inicio = time.monotonic()
@@ -180,21 +190,56 @@ def ejecutar_caso(caso, motor, semilla, max_pasos=14, referencias=None):
         for numero in range(max_pasos):
             with rendimiento.paso(numero + 1, "simulacion", f"{motor}:{semilla}:{caso['id']}") as medicion:
                 elementos, estado = app.observar()
+                if tarea is not None:
+                    estado['memoria_tarea'] = tarea.contexto()
                 accion = agente.continuar_pendiente(pendiente, estado, elementos)
                 pendiente = None
                 if accion is None:
+                    opciones = {'tarea': tarea} if tarea is not None else {}
+                    ayudas = {**(referencias or {}), 'ayuda_aplicacion': marcas.ayuda_aplicacion(estado)} if ampliado else referencias
                     accion, dato, intentos = agente.proponer(caso["objetivo"], elementos, estado, historial,
                         marcas.preguntar_json, acciones.normalizar_tecla, traza=traza, feedback=feedback,
-                        referencias=referencias)
+                        referencias=ayudas, **opciones)
                 medicion["accion"] = accion
                 feedback = ""
                 registro = {"numero": numero + 1, "accion": accion, "estado": copy.deepcopy(estado), "tiempos": medicion}
                 pasos.append(registro)
-                if accion['tipo'] == 'nada' and not historial:
+                tipo = accion['tipo']
+                if ampliado and tipo == 'nada' and caso.get('criterio') == 'rechazo_seguro':
+                    app.detener(accion)
+                    if app.cumplida():
+                        resultado.update(correcto=True, motivo='rechazo seguro confirmado por el estado simulado')
+                        break
+                if tipo == 'nada' and not historial:
                     resultado['motivo'] = 'no pudo continuar; sin efectos pendientes de verificar'
                     break
-                if accion["tipo"] in ("listo", "nada"):
-                    verificacion = agente.verificar(caso["objetivo"], elementos, estado, historial, marcas.preguntar_json)
+                verificacion_previa = None
+                if tipo == 'nada':
+                    verificacion_previa = agente.verificar(caso['objetivo'], elementos, estado, historial, marcas.preguntar_json)
+                    registro['verificacion_previa'] = verificacion_previa
+                    if agente.final_confirmado(verificacion_previa):
+                        tipo = 'listo'
+                        registro['promocion_nada_listo'] = True
+                    else:
+                        registro['verificacion'] = verificacion_previa
+                        resultado['motivo'] = 'no pudo continuar y no se confirmó el objetivo'
+                        break
+                if tipo in ('listo', 'siguiente') and tarea is not None and tarea.actual:
+                    revision_etapa = agente.verificar(tarea.actual, elementos, estado, historial, marcas.preguntar_json)
+                    registro['verificacion_etapa'] = revision_etapa
+                    try:
+                        tarea.avanzar(revision_etapa)
+                    except ValueError as error:
+                        feedback = str(error)
+                        continue
+                    estado['memoria_tarea'] = tarea.contexto()
+                    if tarea.actual:
+                        feedback = 'Etapa comprobada. Continúa con la etapa activa usando los datos conservados.'
+                        continue
+                    tipo = 'listo'
+                if tipo == 'listo':
+                    registro['estado_cierre'] = copy.deepcopy(estado)
+                    verificacion = verificacion_previa or agente.verificar(caso["objetivo"], elementos, estado, historial, marcas.preguntar_json)
                     registro["verificacion"] = verificacion
                     if accion['tipo'] == 'listo' and not app.cumplida(): resultado["falsos_listo_propuestos"] += 1
                     if agente.final_confirmado(verificacion):
@@ -202,10 +247,11 @@ def ejecutar_caso(caso, motor, semilla, max_pasos=14, referencias=None):
                         resultado["falso_exito_aceptado"] = not resultado["correcto"]
                         resultado["motivo"] = "completado" if resultado["correcto"] else "declaró éxito sin cumplir el objetivo real"
                         break
-                    if accion['tipo'] == 'nada':
-                        resultado['motivo'] = 'no pudo continuar y no se confirmó el objetivo'
-                        break
                     feedback = "Verificación: " + str(verificacion.get("pendiente", "Falta evidencia"))
+                    continue
+                if accion['tipo'] == 'recordar' and tarea is not None:
+                    tarea.recordar(accion['texto'], estado)
+                    historial.append('conservé datos observados: ' + accion['texto'])
                     continue
                 if accion["tipo"] == "nada":
                     resultado["motivo"] = "no pudo continuar"
@@ -214,6 +260,13 @@ def ejecutar_caso(caso, motor, semilla, max_pasos=14, referencias=None):
                 if agente.repetida_sin_progreso(accion, elementos, traza):
                     feedback = "No se ejecutó una acción repetida sin progreso. Elige un paso distinto."
                     continue
+                if ampliado and not app.revalidar(accion):
+                    bloqueado = agente.registrar_intento_fallido(accion, elementos, estado, traza, 'Destino no accesible en el simulador')
+                    registro['no_ejecutado'] = True
+                    if bloqueado:
+                        resultado['motivo'] = 'corte del controlador tras dos rechazos; no produjo NADA'
+                        break
+                    continue
                 app.aplicar(accion)
                 elementos_despues, estado_despues = app.observar()
                 if accion["tipo"] == "clic": texto = "clic en «" + elementos[accion["n"] - 1][1] + "»"
@@ -221,7 +274,9 @@ def ejecutar_caso(caso, motor, semilla, max_pasos=14, referencias=None):
                 elif accion["tipo"] == "tecla": texto = "pulsé la tecla " + accion["tecla"]
                 else: texto = accion["tipo"]
                 historial.append(texto)
-                traza.append({"clave": clave, "accion": texto, "resultado": {
+                extra = {'evento': agente.evento_accion(accion, elementos, estado),
+                         'firma_operativa': agente.firma_operativa(accion, elementos, estado)} if ampliado else {}
+                traza.append({"clave": clave, "accion": texto, **extra, "resultado": {
                     "cambio_observable": agente.huella(estado, elementos) != agente.huella(estado_despues, elementos_despues),
                     "foco": estado_despues["foco"], "ventana": estado_despues["ventana"]}})
                 pendiente = accion.get("_despues")
@@ -234,6 +289,10 @@ def ejecutar_caso(caso, motor, semilla, max_pasos=14, referencias=None):
     resultado.update(segundos=round(time.monotonic() - inicio, 3), pasos=len(pasos), objetivo_logrado=app.cumplida(),
         objetivo=caso["objetivo"], valor_final=app.enviado, traza=pasos,
         peticiones=copy.deepcopy(marcas.PETICIONES[peticiones_inicio:]))
+    if ampliado:
+        resultado['estado_final'] = app.diagnostico()
+        resultado['criterio'] = caso.get('criterio', 'estado_final')
+        resultado['etapas'] = tarea.contexto() if tarea is not None else None
     resultado.update(rendimiento.resumir_consultas(resultado["peticiones"]))
     resultado["tokens_por_paso"] = (round(resultado["tokens_generados"] / max(1, len(pasos)), 3)
                                     if resultado["tokens_generados"] is not None else None)
@@ -252,16 +311,18 @@ def main():
     parser.add_argument("--motores", default="lfm3,nemotron")
     parser.add_argument("--semillas", default="42,99")
     parser.add_argument("--casos", default="")
+    parser.add_argument('--suite', choices=('original', 'ampliado'), default='ampliado')
     parser.add_argument("--salida", type=Path, default=Path(marcas.OUT) / "evaluacion")
     args = parser.parse_args()
     motores = args.motores.split(",")
     if any(m not in motor_ia.PERFILES for m in motores): parser.error("Motor desconocido")
     semillas = [int(v) for v in args.semillas.split(",")]
-    casos = [c for c in CASOS if not args.casos or c["id"] in args.casos.split(",")]
+    seleccion = CASOS_ORIGINALES if args.suite == 'original' else CASOS
+    casos = [c for c in seleccion if not args.casos or c["id"] in args.casos.split(",")]
     args.salida.mkdir(parents=True, exist_ok=True)
-    manifiesto = {"tipo": "tareas simuladas, sin control del escritorio", "motores": motores, "semillas": semillas,
-        "versiones": {}, "archivos": {n: hashlib.sha256(Path(__file__).with_name(n).read_bytes()).hexdigest()
-        for n in ("agente.py", "marcas.py", "evaluacion.py", "motor_ia.py")}, "casos": casos}
+    manifiesto = {"tipo": "tareas simuladas, sin control del escritorio", "suite": args.suite, "motores": motores, "semillas": semillas,
+        "versiones": {}, "archivos": {n: hashlib.sha256((Path(__file__).parent / n).read_bytes()).hexdigest()
+        for n in ("agente.py", "marcas.py", "evaluacion.py", "motor_ia.py", "entornos_evaluacion.py", "interacciones_evaluacion.py", "jarvis.py", "rendimiento.py", "ayudas_aplicacion/ventanas.json")}, "casos": casos}
     for motor in motores:
         url = motor_ia.PERFILES[motor]["url"].rsplit('/v1/', 1)[0]
         try:
@@ -275,7 +336,8 @@ def main():
         orden = [(caso, motor) for caso in casos for motor in motores]
         random.Random(semilla).shuffle(orden)
         for caso, motor in orden:
-            resultado = ejecutar_caso(caso, motor, semilla)
+            with sin_entrada_nativa():
+                resultado = ejecutar_caso(caso, motor, semilla)
             resultados.append(resultado)
             (args.salida / 'resultados.json').write_text(json.dumps(resultados, ensure_ascii=False, indent=2), encoding='utf-8')
             print(f"{motor} {caso['id']} semilla={semilla}: "
